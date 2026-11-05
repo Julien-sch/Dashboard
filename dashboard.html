@@ -199,9 +199,12 @@ const wetterSymbol = (code, tag = 1) => symbol(wmo(code)[2] === "sonne-i" && !ta
 const abstand = (tag, heute) => Math.round((alsDatum(tag) - alsDatum(heute)) / 864e5);
 const kurzesDatum = tag => `${tagKurz.format(alsDatum(tag))}, ${tag.slice(8)}.${tag.slice(5, 7)}.`;
 
+// Tage bis zum Sonntag dieser Woche
+const resteWoche = heute => 6 - (alsDatum(heute).getUTCDay() + 6) % 7;
+
 function tagName(tag, heute) {
   const tage = abstand(tag, heute);
-  return tage === 0 ? "Heute" : tage === 1 ? "Morgen" : tage < 7 ? tagLang.format(alsDatum(tag)) : kurzesDatum(tag);
+  return tage === 0 ? "Heute" : tage === 1 ? "Morgen" : tage <= resteWoche(heute) ? tagLang.format(alsDatum(tag)) : kurzesDatum(tag);
 }
 
 // Striche des Ziffernblatts einmalig berechnen
