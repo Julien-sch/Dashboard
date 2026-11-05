@@ -367,10 +367,15 @@ async function holeDaten() {
       warnungen = (await ladeJson(`https://api.brightsky.dev/alerts?${ort}&tz=${encodeURIComponent(tz)}`)).alerts;
     } catch (e) { /* letzte Warnung bleibt, bis sie abläuft */ }
   }
-  zeigeWetter();
-  zeigeTermine();
+  sicher(zeigeWetter);
+  sicher(zeigeTermine);
   // Nach einem Fehlschlag bald erneut versuchen, z. B. wenn das WLAN nach dem Start noch fehlt
   setTimeout(holeDaten, (online ? K.wetterAbrufMinuten : 2) * 60000);
+}
+
+// Ein Fehler in einer Anzeige darf den Minutentakt der Uhr nicht anhalten
+function sicher(zeige) {
+  try { zeige(); } catch (e) { console.error(e); }
 }
 
 let letzteStunde = "";
@@ -379,16 +384,16 @@ function tick() {
   if (zeit === K.neuLadenUm && performance.now() > 60000) location.reload();
   $("uhr").innerHTML = zeit.replace(":", "<span>:</span>");
   zeigeZeiger(zeit);
-  zeigeBus();
+  sicher(zeigeBus);
   const nacht = K.nachtVon > K.nachtBis ? zeit >= K.nachtVon || zeit < K.nachtBis : zeit >= K.nachtVon && zeit < K.nachtBis;
   document.documentElement.classList.toggle("nacht", nacht);
   if (j.slice(0, 13) !== letzteStunde) {
     letzteStunde = j.slice(0, 13);
     const tag = j.slice(0, 10);
     $("datum").textContent = `${tagKurz.format(alsDatum(tag))}, ${Number(tag.slice(8))}. ${monatKurz.format(alsDatum(tag))}`;
-    zeigeMuell();
-    zeigeTermine();
-    zeigeWetter();
+    sicher(zeigeMuell);
+    sicher(zeigeTermine);
+    sicher(zeigeWetter);
   }
   setTimeout(tick, 60000 - Date.now() % 60000);
 }
