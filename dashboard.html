@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<script>
+/* ===== KONFIGURATION: hier alle Einstellungen ändern ===== */
+/* Adresse, Kalender-Link und Kontakt stehen in dashboard-privat.conf */
+const KONFIG = {
+  // Standort für Wetter und Warnungen (Braunschweig)
+  breite: 52.2689,
+  laenge: 10.5268,
+  zeitzone: "Europe/Berlin",
+
+  // Kacheln ein- oder ausschalten und Anzahl der Einträge
+  kacheln: { stunden: true, tage: true, muell: true, bus: true, termine: true, warnung: true },
+  stundenAnzahl: 3,
+  tageAnzahl: 3,
+  muellAnzahl: 2,
+  busAnzahl: 3,
+  termineAnzahl: 2,
+
+  // Ab dieser DWD-Stufe erscheint eine Warnung: "minor", "moderate", "severe" oder "extreme"
+  warnungAb: "severe",
+
+  // Anzeigename und Farbe je Abfallart (Schlüssel wie im ALBA-Kalender)
+  muellArten: {
+    "Restmüll":  { name: "Restmüll",    farbe: "#a8a8a8" },
+    "Biotonne":  { name: "Biotonne",    farbe: "#c08a5a" },
+    "Altpapier": { name: "Altpapier",   farbe: "#5aa5f0" },
+    "LVP":       { name: "Gelbe Tonne", farbe: "#f5c92e" },
+  },
+
+  // Uhrzeiten im Format HH:MM
+  nachtVon: "22:00",
+  nachtBis: "06:00",
+  neuLadenUm: "04:00",   // tägliches Neuladen, übernimmt die neuen Daten
+
+  wetterAbrufMinuten: 30,
+};
+/* ===== ENDE DER KONFIGURATION ===== */
+</script>
+<script>
+/* Die folgenden Blöcke füllt dashboard-update.py, bitte nicht von Hand ändern */
+/* MUELL-START */
+const MUELL_TERMINE = [
+];
+/* MUELL-ENDE */
+/* BUS-START */
+const BUS_ABFAHRTEN = [
+];
+/* BUS-ENDE */
+/* KALENDER-START */
+const KALENDER_TERMINE = [
+];
+/* KALENDER-ENDE */
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard</title>
+<style>
+  /* 1rem = 1 % der Höhe bei 16:9, damit alles mit dem Bildschirm skaliert */
+  html { font-size: min(1vh, .5625vw); }
+  :root { --text: #f4f0e8; --leise: #a8a196; --linie: #33312e; --uhr: #fff; --bus: #f2b33d; --warnung: #ff6a45; }
+  .nacht { --text: #6e6355; --leise: #4a4339; --linie: #1a1815; --uhr: #8f7c66; --bus: #8a6a2c; --warnung: #8a3b28; }
+  * { box-sizing: border-box; margin: 0; cursor: none; }
+  html, body { height: 100%; overflow: hidden; background: #000; }
+  body {
+    display: grid; grid-template-columns: 50rem 60rem 1fr; grid-template-rows: 1fr auto; gap: 1.5rem 3rem;
+    padding: 2.5rem 3rem 1rem;
+    color: var(--text); font: 6.2rem/1.15 "DejaVu Sans", Verdana, sans-serif;
+    touch-action: none; user-select: none;
+  }
+  svg { fill: none; stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* Uhr */
+  #zeit { display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 0; }
+  #zifferblatt { width: 50rem; height: 50rem; color: var(--uhr); stroke-linecap: butt; }
+  #minutenstriche { stroke: var(--leise); stroke-width: 1.2; }
+  #stundenstriche { stroke-width: 5; }
+  #stundenzeiger { stroke-width: 8; }
+  #minutenzeiger { stroke-width: 5; }
+  #achse { fill: currentColor; stroke: none; }
+  #busmarken circle { fill: var(--bus); stroke: none; }
+  #uhr { margin-top: 1rem; font-size: 15rem; font-weight: bold; line-height: 1.05; letter-spacing: -.03em; color: var(--uhr); }
+  #uhr span { color: var(--leise); }
+  #datum { font-size: 6.6rem; color: var(--leise); white-space: nowrap; }
+  #sonne { display: flex; gap: 3rem; margin-top: .8rem; color: var(--leise); white-space: nowrap; }
+  #sonne span { display: flex; align-items: center; gap: .6rem; }
+  #sonne svg { width: 6.6rem; height: 6.6rem; }
+
+  /* Wetter */
+  #wetter { display: flex; flex-direction: column; justify-content: space-between; min-height: 0; }
+  .jetzt { display: flex; align-items: center; gap: 3rem; }
+  .jetzt svg { flex: none; width: 19rem; height: 19rem; }
+  .jetzt .temp { font-size: 17rem; font-weight: bold; line-height: 1; }
+  .jetzt .temp.lang { font-size: 13rem; }
+  .offline { font-size: 4.6rem; color: var(--leise); white-space: nowrap; }
+  .gruppe { border-top: .3rem solid var(--linie); padding-top: 1.2rem; }
+  .reihe { display: grid; grid-template-columns: 17.5rem 9.5rem 1fr 14.5rem; align-items: center; font-size: 5.8rem; white-space: nowrap; }
+  .tage .reihe { grid-template-columns: 9.5rem 9.5rem 1fr 14.5rem; font-size: 6.2rem; }
+  .reihe svg { width: 8.8rem; height: 8.8rem; justify-self: end; }
+  .reihe .temp { font-size: 7rem; text-align: right; }
+  .neben { font-size: 5.2rem; color: var(--leise); text-align: right; }
+
+  /* Müll, Bus, Termine */
+  #alltag { display: flex; flex-direction: column; gap: 2rem; min-width: 0; min-height: 0; }
+  #muell { display: flex; flex-direction: column; gap: 1rem; }
+  #termine { flex: 2; display: flex; flex-direction: column; gap: 1rem; min-height: 0; border-top: .3rem solid var(--linie); padding-top: 1.5rem; }
+  .eintrag {
+    height: 14.5rem; display: grid; grid-template-columns: 10rem 1fr; align-items: center; gap: 1rem;
+    padding-right: 1rem; line-height: 1.1; color: var(--leise); white-space: nowrap;
+  }
+  .eintrag svg { width: 10rem; height: 10rem; color: var(--leise); }
+  .eintrag .tonne { color: var(--tonne); }
+  .eintrag b { display: block; color: var(--text); }
+  .termin { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-size: 5.6rem; line-height: 1.15; color: var(--leise); white-space: nowrap; }
+  .termin b { overflow: hidden; text-overflow: ellipsis; font-size: 6.6rem; font-weight: normal; color: var(--text); }
+  .faellig { background: var(--tonne); color: #000; font-weight: bold; }
+  .faellig b, .faellig .tonne { color: #000; }
+  /* color-mix erst ab Firefox 113, davor greift die jeweils erste Angabe */
+  .nacht .eintrag .tonne { color: var(--leise); color: color-mix(in srgb, var(--tonne) 45%, #000); }
+  .nacht .faellig { background: var(--linie); background: color-mix(in srgb, var(--tonne) 30%, #000); color: var(--uhr); }
+  .nacht .faellig b { color: var(--uhr); }
+  .nacht .eintrag.faellig .tonne { color: var(--uhr); }
+  #warnung { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; padding: .8rem 2rem; background: var(--warnung); color: #000; font-size: 5.6rem; }
+  #warnung b {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+    line-height: 1.1; hyphens: auto; overflow-wrap: break-word;
+  }
+
+  #bus { border-top: .3rem solid var(--linie); padding-top: 1.2rem; }
+  .abfahrt { display: flex; justify-content: space-between; align-items: baseline; font-size: 7.4rem; line-height: 1.2; padding-right: 1rem; }
+  .abfahrt b { color: var(--bus); }
+  .leer { color: var(--leise); }
+
+  #quellen { grid-column: 1 / -1; font-size: 2.4rem; color: var(--leise); text-align: right; white-space: nowrap; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="sonne-i" viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/><path d="M24 4v6M24 38v6M4 24h6M38 24h6M10 10l4 4M34 34l4 4M38 10l-4 4M14 34l-4 4"/></symbol>
+  <symbol id="mond" viewBox="0 0 48 48"><path d="M38 30A17 17 0 0 1 18 10a17 17 0 1 0 20 20z"/></symbol>
+  <symbol id="teils" viewBox="0 0 48 48"><path d="M26 10a8 8 0 0 1 10 9M31 3v3M43 17h3M41 7l-2 2M14 40h20a7 7 0 0 0 1-14 10 10 0 0 0-19-2 8 8 0 0 0-2 16z"/></symbol>
+  <symbol id="wolke" viewBox="0 0 48 48"><path d="M13 38h22a9 9 0 0 0 1-18 12 12 0 0 0-23-2 10 10 0 0 0 0 20z"/></symbol>
+  <symbol id="nebel" viewBox="0 0 48 48"><path d="M6 14h36M12 24h30M6 34h30"/></symbol>
+  <symbol id="regen" viewBox="0 0 48 48"><path d="M13 30h22a8 8 0 0 0 1-16 11 11 0 0 0-21-2 9 9 0 0 0-2 18zM16 36l-2 6M26 36l-2 6M36 36l-2 6"/></symbol>
+  <symbol id="schnee" viewBox="0 0 48 48"><path d="M13 30h22a8 8 0 0 0 1-16 11 11 0 0 0-21-2 9 9 0 0 0-2 18zM15 38v.1M24 42v.1M33 38v.1"/></symbol>
+  <symbol id="gewitter" viewBox="0 0 48 48"><path d="M13 30h22a8 8 0 0 0 1-16 11 11 0 0 0-21-2 9 9 0 0 0-2 18zM26 26l-6 10h8l-5 9"/></symbol>
+  <symbol id="aufgang" viewBox="0 0 48 48"><path d="M6 38h36M14 38a10 10 0 0 1 20 0M24 6v14M18 12l6-6 6 6"/></symbol>
+  <symbol id="untergang" viewBox="0 0 48 48"><path d="M6 38h36M14 38a10 10 0 0 1 20 0M24 6v14M18 14l6 6 6-6"/></symbol>
+  <symbol id="tonne-i" viewBox="0 0 48 48"><path fill="currentColor" stroke-width="2" d="M7 13h34v4H7zM11 20h26l-3 22H14z"/><path stroke-width="3" d="M19 12V7h10v5"/></symbol>
+</svg>
+
+<section id="zeit">
+  <svg id="zifferblatt" viewBox="-100 -100 200 200" aria-hidden="true">
+    <path id="minutenstriche"/>
+    <path id="stundenstriche"/>
+    <g id="busmarken"></g>
+    <line id="stundenzeiger" y1="14" y2="-50"/>
+    <line id="minutenzeiger" y1="18" y2="-76"/>
+    <circle id="achse" r="7"/>
+  </svg>
+  <div id="uhr"></div>
+  <div id="datum"></div>
+  <div id="sonne"></div>
+</section>
+<section id="wetter"></section>
+<section id="alltag">
+  <div id="muell"></div>
+  <div id="bus"></div>
+  <div id="termine"></div>
+</section>
+<footer id="quellen">Wetter: open-meteo.com · Warnungen: DWD, brightsky.dev · Fahrplan: transitous.org/sources, © OpenStreetMap</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const K = KONFIG;
+const tz = K.zeitzone;
+const isoFormat = new Intl.DateTimeFormat("sv-SE", { timeZone: tz, dateStyle: "short", timeStyle: "short" });
+const tagKurz = new Intl.DateTimeFormat("de-DE", { timeZone: tz, weekday: "short" });
+const tagLang = new Intl.DateTimeFormat("de-DE", { timeZone: tz, weekday: "long" });
+const monatKurz = new Intl.DateTimeFormat("de-DE", { timeZone: tz, month: "short" });
+
+// Zeit in Berlin als "JJJJ-MM-TTTHH:MM", im selben Format wie Open-Meteo
+const iso = d => isoFormat.format(d).replace(" ", "T");
+const jetzt = () => iso(new Date());
+const alsDatum = tag => new Date(tag + "T12:00:00Z");
+
+// WMO-Wettercodes: [bis Code, Text, Symbol]
+const WMO = [
+  [0, "Klar", "sonne-i"], [1, "Heiter", "sonne-i"], [2, "Wolkig", "teils"], [3, "Bedeckt", "wolke"],
+  [48, "Nebel", "nebel"], [55, "Niesel", "regen"], [57, "Eisregen", "regen"], [65, "Regen", "regen"],
+  [67, "Eisregen", "regen"], [77, "Schnee", "schnee"], [82, "Schauer", "regen"], [86, "Schnee", "schnee"],
+  [99, "Gewitter", "gewitter"],
+];
+const wmo = code => WMO.find(w => code <= w[0]) || WMO[3];
+const grad = t => String(Math.round(t)).replace("-", "−") + "°";
+const symbol = name => `<svg><use href="#${name}"/></svg>`;
+const wetterSymbol = (code, tag = 1) => symbol(wmo(code)[2] === "sonne-i" && !tag ? "mond" : wmo(code)[2]);
+const abstand = (tag, heute) => Math.round((alsDatum(tag) - alsDatum(heute)) / 864e5);
+const kurzesDatum = tag => `${tagKurz.format(alsDatum(tag))}, ${tag.slice(8)}.${tag.slice(5, 7)}.`;
+
+function tagName(tag, heute) {
+  const tage = abstand(tag, heute);
+  return tage === 0 ? "Heute" : tage === 1 ? "Morgen" : tage < 7 ? tagLang.format(alsDatum(tag)) : kurzesDatum(tag);
+}
+
+// Striche des Ziffernblatts einmalig berechnen
+function zeichneZifferblatt() {
+  let minuten = "", stunden = "";
+  for (let m = 0; m < 60; m++) {
+    const w = m * Math.PI / 30, s = Math.sin(w), c = -Math.cos(w);
+    const innen = m % 5 ? 84 : 72;
+    const strich = `M${(s * innen).toFixed(1)} ${(c * innen).toFixed(1)}L${(s * 90).toFixed(1)} ${(c * 90).toFixed(1)}`;
+    if (m % 5) minuten += strich; else stunden += strich;
+  }
+  $("minutenstriche").setAttribute("d", minuten);
+  $("stundenstriche").setAttribute("d", stunden);
+}
+
+function zeigeZeiger(zeit) {
+  const h = Number(zeit.slice(0, 2)), m = Number(zeit.slice(3));
+  $("stundenzeiger").setAttribute("transform", `rotate(${(h % 12 + m / 60) * 30})`);
+  $("minutenzeiger").setAttribute("transform", `rotate(${m * 6})`);
+}
+
+function zeigeMuell() {
+  const box = $("muell");
+  if (!K.kacheln.muell) { box.style.display = "none"; return; }
+  const heute = jetzt().slice(0, 10);
+  const naechste = MUELL_TERMINE.filter(t => t.slice(0, 10) >= heute).slice(0, K.muellAnzahl);
+  box.innerHTML = naechste.map(t => {
+    const tag = t.slice(0, 10), art = t.slice(11);
+    const a = K.muellArten[art] || { name: art, farbe: "#a8a8a8" };
+    return `<div class="eintrag${abstand(tag, heute) < 2 ? " faellig" : ""}" style="--tonne:${a.farbe}">`
+      + `<svg class="tonne"><use href="#tonne-i"/></svg><div>${tagName(tag, heute)}<b>${a.name}</b></div></div>`;
+  }).join("") || `<div class="leer">Keine Mülltermine</div>`;
+}
+
+function zeigeBus() {
+  const box = $("bus");
+  if (!K.kacheln.bus) { box.style.display = "none"; return; }
+  const nun = Date.now();
+  const naechste = BUS_ABFAHRTEN.map(b => ({ zeit: Date.parse(b.slice(0, 20)), linie: b.slice(21).split(" ")[0] }))
+    .filter(b => b.zeit > nun).slice(0, K.busAnzahl);
+  box.innerHTML = naechste.map(b => {
+    const min = Math.ceil((b.zeit - nun) / 60000);
+    return `<div class="abfahrt"><b>${b.linie}</b><span>${min < 60 ? min + " min" : iso(new Date(b.zeit)).slice(11)}</span></div>`;
+  }).join("") || `<div class="leer">Keine Abfahrten</div>`;
+  // Punkte am Rand zeigen die Abfahrten der nächsten Stunde auf dem Minutenkreis
+  $("busmarken").innerHTML = naechste.filter(b => b.zeit - nun < 36e5).map(b => {
+    const w = new Date(b.zeit).getUTCMinutes() * Math.PI / 30;
+    return `<circle r="5" cx="${(Math.sin(w) * 95).toFixed(1)}" cy="${(-Math.cos(w) * 95).toFixed(1)}"/>`;
+  }).join("");
+}
+
+function zeigeTermine() {
+  const box = $("termine");
+  const stufen = ["minor", "moderate", "severe", "extreme"];
+  const warnung = warnungen.find(w => stufen.indexOf(w.severity) >= stufen.indexOf(K.warnungAb)
+    && (!w.expires || Date.parse(w.expires) > Date.now()));
+  if (warnung) {
+    const bis = warnung.expires ? iso(new Date(warnung.expires)) : "";
+    const wann = bis ? `bis ${bis.slice(0, 10) === jetzt().slice(0, 10) ? "" : tagKurz.format(new Date(warnung.expires)) + ", "}${bis.slice(11)}` : "";
+    box.style.display = "";
+    box.innerHTML = `<div id="warnung"><b>${warnung.event_de}</b>${wann}</div>`;
+    return;
+  }
+  const j = jetzt(), heute = j.slice(0, 10);
+  const naechste = K.kacheln.termine
+    ? KALENDER_TERMINE.filter(t => t.split(" ")[0] >= heute && (t[10] !== "T" || t.slice(0, 16) > j)).slice(0, K.termineAnzahl) : [];
+  box.style.display = naechste.length ? "" : "none";
+  box.innerHTML = naechste.map(t => {
+    const zeitpunkt = t.split(" ")[0], titel = t.slice(zeitpunkt.length + 1);
+    const uhrzeit = zeitpunkt.length > 10 ? ` ${zeitpunkt.slice(11)}` : "";
+    return `<div class="termin">${tagName(zeitpunkt.slice(0, 10), heute)}${uhrzeit}<b>${titel}</b></div>`;
+  }).join("");
+}
+
+let wetter = null;
+let warnungen = [];
+let online = true;
+try { wetter = JSON.parse(localStorage.getItem("wetter")); } catch (e) { /* Speicher nicht verfügbar */ }
+
+function offlineHinweis() {
+  if (online) return "";
+  const stand = wetter && iso(new Date(wetter.stand));
+  const zeit = !stand ? "" : stand.slice(0, 10) === jetzt().slice(0, 10) ? stand.slice(11)
+    : `${stand.slice(8, 10)}.${stand.slice(5, 7)}.`;
+  return `<div class="offline">offline ${zeit}</div>`;
+}
+
+function zeigeWetter() {
+  if (!wetter) {
+    $("wetter").innerHTML = `<div class="jetzt"><div><div class="temp">–</div>${offlineHinweis()}</div></div>`;
+    return;
+  }
+  const { current: c, hourly: h, daily: d } = wetter;
+  const jetztTemp = grad(c.temperature_2m);
+  let html = `<div class="jetzt">${wetterSymbol(c.weather_code, c.is_day)}<div><div class="temp${jetztTemp.length > 3 ? " lang" : ""}">${jetztTemp}</div>`
+    + `<div>${wmo(c.weather_code)[1]}</div>${offlineHinweis()}</div></div>`;
+
+  const j = jetzt(), heute = j.slice(0, 10);
+  const n = K.stundenAnzahl;
+  // Die Stunden verteilen sich auf den Rest des Tages, spätabends läuft es in die Nacht weiter
+  const schritt = Math.max(1, Math.floor((24 - Number(j.slice(11, 13))) / n));
+  const start = h.time.findIndex(t => t > j);
+  if (K.kacheln.stunden && start >= 0) {
+    html += `<div class="gruppe">`;
+    for (let i = 0; i < n && start + i * schritt < h.time.length; i++) {
+      const s = start + i * schritt, regen = h.precipitation_probability[s];
+      html += `<div class="reihe"><span>${h.time[s].slice(11, 16)}</span>${wetterSymbol(h.weather_code[s], h.is_day[s])}`
+        + `<span class="temp">${grad(h.temperature_2m[s])}</span><span class="neben">${regen >= 20 ? regen + "%" : ""}</span></div>`;
+    }
+    html += `</div>`;
+  }
+  if (K.kacheln.tage) {
+    html += `<div class="gruppe tage">`;
+    d.time.map((t, i) => [t, i]).filter(([t]) => t > heute).slice(0, K.tageAnzahl).forEach(([t, i]) => {
+      html += `<div class="reihe"><span>${tagKurz.format(alsDatum(t))}</span>${wetterSymbol(d.weather_code[i])}`
+        + `<span class="temp">${grad(d.temperature_2m_max[i])}</span><span class="neben">${grad(d.temperature_2m_min[i])}</span></div>`;
+    });
+    html += `</div>`;
+  }
+  $("wetter").innerHTML = html;
+
+  const heuteNr = d.time.indexOf(heute);
+  const uhrzeit = t => t.slice(11, 16).replace(/^0/, "");
+  $("sonne").innerHTML = heuteNr < 0 ? "" : `<span>${symbol("aufgang")}${uhrzeit(d.sunrise[heuteNr])}</span>`
+    + `<span>${symbol("untergang")}${uhrzeit(d.sunset[heuteNr])}</span>`;
+}
+
+async function ladeJson(url) {
+  // Ohne Netzverbindung gar nicht erst abrufen, Firefox meldet sonst einen CORS-Fehler in der Konsole
+  if (!navigator.onLine) throw new Error("offline");
+  const abbruch = new AbortController();
+  const frist = setTimeout(() => abbruch.abort(), 20000);
+  try {
+    const antwort = await fetch(url, { signal: abbruch.signal });
+    if (!antwort.ok) throw new Error(antwort.status);
+    return await antwort.json();
+  } finally {
+    clearTimeout(frist);
+  }
+}
+
+async function holeDaten() {
+  const ort = `lat=${K.breite}&lon=${K.laenge}`;
+  const wetterUrl = `https://api.open-meteo.com/v1/forecast?latitude=${K.breite}&longitude=${K.laenge}`
+    + `&timezone=${encodeURIComponent(tz)}&forecast_days=7`
+    + "&current=temperature_2m,weather_code,is_day"
+    + "&hourly=temperature_2m,weather_code,is_day,precipitation_probability"
+    + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset";
+  try {
+    const daten = await ladeJson(wetterUrl);
+    daten.stand = Date.now();
+    wetter = daten;
+    online = true;
+    try { localStorage.setItem("wetter", JSON.stringify(daten)); } catch (e) { /* ohne Speicher weiter */ }
+  } catch (e) {
+    online = false;
+  }
+  if (online && K.kacheln.warnung) {
+    try {
+      warnungen = (await ladeJson(`https://api.brightsky.dev/alerts?${ort}&tz=${encodeURIComponent(tz)}`)).alerts;
+    } catch (e) { /* letzte Warnung bleibt, bis sie abläuft */ }
+  }
+  zeigeWetter();
+  zeigeTermine();
+  // Nach einem Fehlschlag bald erneut versuchen, z. B. wenn das WLAN nach dem Start noch fehlt
+  setTimeout(holeDaten, (online ? K.wetterAbrufMinuten : 2) * 60000);
+}
+
+let letzteStunde = "";
+function tick() {
+  const j = jetzt(), zeit = j.slice(11);
+  if (zeit === K.neuLadenUm && performance.now() > 60000) location.reload();
+  $("uhr").innerHTML = zeit.replace(":", "<span>:</span>");
+  zeigeZeiger(zeit);
+  zeigeBus();
+  const nacht = K.nachtVon > K.nachtBis ? zeit >= K.nachtVon || zeit < K.nachtBis : zeit >= K.nachtVon && zeit < K.nachtBis;
+  document.documentElement.classList.toggle("nacht", nacht);
+  if (j.slice(0, 13) !== letzteStunde) {
+    letzteStunde = j.slice(0, 13);
+    const tag = j.slice(0, 10);
+    $("datum").textContent = `${tagKurz.format(alsDatum(tag))}, ${Number(tag.slice(8))}. ${monatKurz.format(alsDatum(tag))}`;
+    zeigeMuell();
+    zeigeTermine();
+    zeigeWetter();
+  }
+  setTimeout(tick, 60000 - Date.now() % 60000);
+}
+
+zeichneZifferblatt();
+tick();
+holeDaten();
+</script>
+</body>
+</html>
