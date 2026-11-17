@@ -1,11 +1,17 @@
 #!/bin/sh
 # Richtet das Wand-Dashboard auf antiX ein. Kann beliebig oft laufen.
-#   sh setup.sh              einrichten
-#   sh setup.sh --entfernen  Autostart, Cron-Job und Firefox-Profil entfernen
+#   sh setup.sh              einrichten bzw. nach einem Update übernehmen
+#   sh setup.sh --entfernen  Autostart, Cron-Jobs und Firefox-Profil entfernen
+#
+# Liegt dieses Skript in einem geklonten Repo (z. B. ~/Dashboard), kopiert es die Dateien
+# nach $HOME. Die Daten der bisherigen Seite bleiben dabei erhalten. Update also:
+#   cd ~/Dashboard && git pull && sh setup.sh
 set -eu
 
+QUELLE=$(cd "$(dirname "$0")" && pwd)
 SEITE=$HOME/dashboard.html
 UPDATE=$HOME/dashboard-update.py
+WACHE=$HOME/dashboard-wache.sh
 PRIVAT=$HOME/dashboard-privat.conf
 STARTUP=$HOME/.desktop-session/startup
 PROFIL=$HOME/.dashboard-firefox
@@ -18,7 +24,7 @@ entferne_autostart() {
 
 # Filtert auch den Eintrag der früheren Version heraus
 ohne_dashboard_jobs() {
-	crontab -l 2>/dev/null | grep -v -E 'muell-update\.sh|dashboard-update\.py' || true
+	crontab -l 2>/dev/null | grep -v -E 'muell-update\.sh|dashboard-update\.py|dashboard-wache\.sh' || true
 }
 
 entferne_cron() {
@@ -31,13 +37,11 @@ if [ "${1:-}" = "--entfernen" ]; then
 	entferne_autostart
 	entferne_cron
 	rm -rf "$PROFIL"
-	echo "Autostart, Cron-Job und Firefox-Profil entfernt."
+	echo "Autostart, Cron-Jobs und Firefox-Profil entfernt."
 	exit 0
 fi
 
-for datei in "$SEITE" "$UPDATE" "$PRIVAT"; do
-	[ -f "$datei" ] || { echo "Nicht gefunden: $datei" >&2; exit 1; }
-done
+[ -f "$PRIVAT" ] || { echo "Nicht gefunden: $PRIVAT" >&2; exit 1; }
 
 FIREFOX=$(command -v firefox-esr || command -v firefox || true)
 [ -n "$FIREFOX" ] || { echo "Firefox nicht gefunden." >&2; exit 1; }
@@ -46,6 +50,26 @@ if ! python3 -c 'import dateutil' 2>/dev/null; then
 	echo "Python 3 mit dateutil fehlt. Installieren: sudo apt install python3 python3-dateutil" >&2
 	exit 1
 fi
+
+# Aus einem Repo-Ordner die Dateien nach $HOME holen, die Daten der alten Seite merken
+DATEN_AUS=""
+if [ "$QUELLE" != "$HOME" ]; then
+	for datei in dashboard.html dashboard-update.py dashboard-wache.sh; do
+		[ -f "$QUELLE/$datei" ] || { echo "Nicht gefunden: $QUELLE/$datei" >&2; exit 1; }
+	done
+	if [ -f "$SEITE" ]; then
+		cp "$SEITE" "$SEITE.alt"
+		DATEN_AUS="--daten-aus=$SEITE.alt"
+	fi
+	cp "$QUELLE/dashboard.html" "$SEITE"
+	cp "$QUELLE/dashboard-update.py" "$UPDATE"
+	cp "$QUELLE/dashboard-wache.sh" "$WACHE"
+	echo "Dateien aus $QUELLE übernommen."
+fi
+
+for datei in "$SEITE" "$UPDATE" "$WACHE"; do
+	[ -f "$datei" ] || { echo "Nicht gefunden: $datei" >&2; exit 1; }
+done
 
 # Eigenes Profil: Nach Stromausfall soll die Seite erscheinen, nicht die Wiederherstellung
 mkdir -p "$PROFIL"
@@ -70,13 +94,22 @@ entferne_autostart
 chmod u+x "$STARTUP"
 echo "Autostart eingetragen: $STARTUP"
 
-# Täglich um 3:17 Uhr, das Neuladen der Seite um 4:00 Uhr übernimmt die Daten
+# Stündlich um :47 den Kalender; Müll und Bus einmal am Tag (kurz nach Mitternacht),
+# bei einem Fehlschlag stündlich erneut. Dazu einmal kurz nach dem Hochfahren.
+# Die offene Seite merkt neue Daten an dashboard-stand.js und lädt sich dann selbst neu.
+# Jede Minute prüft dashboard-wache.sh Firefox und die nächtliche Bildschirmabschaltung.
 if command -v crontab >/dev/null 2>&1; then
-	{ ohne_dashboard_jobs; echo "17 3 * * * python3 \"$UPDATE\" >/dev/null 2>&1"; } | crontab -
-	echo "Cron-Job eingetragen."
+	{
+		ohne_dashboard_jobs
+		echo "@reboot sleep 60 && python3 \"$UPDATE\" --nachholen >/dev/null 2>&1"
+		echo "47 * * * * python3 \"$UPDATE\" --nachholen >/dev/null 2>&1"
+		echo "* * * * * sh \"$WACHE\" >/dev/null 2>&1"
+	} | crontab -
+	echo "Cron-Jobs eingetragen."
 else
 	echo "WARNUNG: crontab fehlt, die Daten werden nicht automatisch aktualisiert." >&2
 fi
 
 rm -f "$HOME/muell-update.sh"
-python3 "$UPDATE" "$SEITE" || echo "WARNUNG: Nicht alle Daten konnten geladen werden." >&2
+python3 "$UPDATE" "$SEITE" $DATEN_AUS || echo "WARNUNG: Nicht alle Daten konnten geladen werden." >&2
+rm -f "$SEITE.alt"

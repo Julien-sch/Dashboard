@@ -18,6 +18,7 @@ const KONFIG = {
   muellAnzahl: 2,
   busAnzahl: 3,
   termineAnzahl: 2,
+  kalenderTage: 30,     // so weit reicht die Vollansicht nach Tipp auf die Termine (höchstens 60)
 
   // Ab dieser DWD-Stufe erscheint eine Warnung: "minor", "moderate", "severe" oder "extreme"
   warnungAb: "severe",
@@ -33,7 +34,7 @@ const KONFIG = {
   // Uhrzeiten im Format HH:MM
   nachtVon: "22:00",
   nachtBis: "06:00",
-  neuLadenUm: "04:00",   // tägliches Neuladen, übernimmt die neuen Daten
+  neuLadenUm: "04:00",   // tägliches Neuladen; neue Daten übernimmt die Seite schon vorher von selbst
 
   wetterAbrufMinuten: 30,
 };
@@ -53,6 +54,12 @@ const BUS_ABFAHRTEN = [
 const KALENDER_TERMINE = [
 ];
 /* KALENDER-ENDE */
+/* ERFOLG-START */
+const DATEN_ERFOLG = {};
+/* ERFOLG-ENDE */
+/* STAND-START */
+const DATEN_STAND = "";
+/* STAND-ENDE */
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard</title>
@@ -162,7 +169,29 @@ const KALENDER_TERMINE = [
     line-height: 1.1; hyphens: auto; overflow-wrap: break-word;
   }
 
-  #quellen { grid-column: 1 / -1; font-size: 2.4rem; color: var(--leise); opacity: .7; text-align: right; white-space: nowrap; }
+  /* Kalender-Vollbild, liegt über allem */
+  #kalender {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 10;
+    display: none; flex-direction: column; gap: 2.5rem; padding: 3rem 4rem;
+    background: var(--grund);
+  }
+  #kalender.offen { display: flex; }
+  #kalender h1 { display: flex; justify-content: space-between; align-items: baseline; font-size: 9rem; line-height: 1; }
+  #kalender h1 small { font-size: 5rem; font-weight: normal; color: var(--leise); }
+  #kalenderliste { flex: 1; min-height: 0; columns: 2; column-gap: 5rem; column-fill: auto; overflow: hidden; }
+  .kalendertag { break-inside: avoid; padding-bottom: 2.2rem; }
+  .kalendertag h2 {
+    margin-bottom: .8rem; padding-bottom: .5rem; border-bottom: .25rem solid var(--linie);
+    font-size: 5rem; font-weight: normal; color: var(--leise);
+  }
+  .kalendertag.heute h2 { color: var(--akzent); }
+  .ktermin { display: grid; grid-template-columns: 24rem 1fr; gap: 1.5rem; font-size: 5.8rem; line-height: 1.3; white-space: nowrap; }
+  .ktermin span { color: var(--leise); font-size: 4.6rem; align-self: center; }
+  .ktermin b { overflow: hidden; text-overflow: ellipsis; font-weight: normal; border-left: .6rem solid var(--termin); padding-left: 1.5rem; }
+
+  #fuss { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 3rem; white-space: nowrap; }
+  #quellen { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; font-size: 2.4rem; color: var(--leise); opacity: .7; }
+  #veraltet { font-size: 3.6rem; color: var(--warnung); }
 </style>
 </head>
 <body>
@@ -200,7 +229,11 @@ const KALENDER_TERMINE = [
   <div id="bus" class="karte"></div>
   <div id="termine" class="karte"></div>
 </section>
-<footer id="quellen">Wetter: open-meteo.com · Warnungen: DWD, brightsky.dev · Fahrplan: transitous.org/sources, © OpenStreetMap</footer>
+<section id="kalender">
+  <h1>Termine <small id="kalenderinfo"></small></h1>
+  <div id="kalenderliste"></div>
+</section>
+<footer id="fuss"><span id="veraltet"></span><span id="quellen">Wetter: open-meteo.com · Warnungen: DWD, brightsky.dev · Fahrplan: transitous.org/sources, © OpenStreetMap</span></footer>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -223,6 +256,7 @@ const WMO = [
   [67, "Eisregen", "regen"], [77, "Schnee", "schnee"], [82, "Schauer", "regen"], [86, "Schnee", "schnee"],
   [99, "Gewitter", "gewitter"],
 ];
+const text = s => s.replace(/[&<>"]/g, z => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[z]);
 const wmo = code => WMO.find(w => code <= w[0]) || WMO[3];
 const grad = t => String(Math.round(t)).replace("-", "−") + "°";
 const symbol = name => `<svg><use href="#${name}"/></svg>`;
@@ -295,15 +329,65 @@ function zeigeTermine() {
     box.innerHTML = `<div id="warnung"><b>${warnung.event_de}</b>${wann}</div>`;
     return;
   }
-  const j = jetzt(), heute = j.slice(0, 10);
-  const naechste = K.kacheln.termine
-    ? KALENDER_TERMINE.filter(t => t.split(" ")[0] >= heute && (t[10] !== "T" || t.slice(0, 16) > j)).slice(0, K.termineAnzahl) : [];
+  const heute = jetzt().slice(0, 10);
+  const naechste = K.kacheln.termine ? kommendeTermine().slice(0, K.termineAnzahl) : [];
   box.style.display = naechste.length ? "" : "none";
-  box.innerHTML = naechste.map(t => {
-    const zeitpunkt = t.split(" ")[0], titel = t.slice(zeitpunkt.length + 1);
-    const uhrzeit = zeitpunkt.length > 10 ? ` ${zeitpunkt.slice(11)}` : "";
-    return `<div class="termin">${tagName(zeitpunkt.slice(0, 10), heute)}${uhrzeit}<b>${titel}</b></div>`;
-  }).join("");
+  box.innerHTML = naechste.map(t =>
+    `<div class="termin">${tagName(t.tag, heute)}${t.uhrzeit ? " " + t.uhrzeit : ""}<b>${text(t.titel)}</b></div>`
+  ).join("");
+}
+
+// Warnt, wenn eine Quelle seit mehr als einem Tag nicht abgerufen werden konnte (z. B. ohne WLAN)
+function zeigeVeraltet() {
+  const heute = jetzt().slice(0, 10);
+  const namen = { MUELL: "Müll", BUS: "Bus", KALENDER: "Kalender" };
+  const alt = Object.keys(DATEN_ERFOLG).filter(q => abstand(DATEN_ERFOLG[q], heute) < -1)
+    .map(q => `${namen[q] || q} ${DATEN_ERFOLG[q].slice(8)}.${DATEN_ERFOLG[q].slice(5, 7)}.`);
+  $("veraltet").textContent = alt.length ? `Daten veraltet: ${alt.join(", ")}` : "";
+}
+
+// Termine ab jetzt; vergangene mit Uhrzeit fallen heraus, ganztägige von heute bleiben
+function kommendeTermine() {
+  const j = jetzt(), heute = j.slice(0, 10);
+  return KALENDER_TERMINE.filter(t => t.split(" ")[0] >= heute && (t[10] !== "T" || t.slice(0, 16) > j)).map(t => {
+    const zeitpunkt = t.split(" ")[0];
+    return { tag: zeitpunkt.slice(0, 10), uhrzeit: zeitpunkt.slice(11), titel: t.slice(zeitpunkt.length + 1) };
+  });
+}
+
+// Vollbild mit allen Terminen der nächsten Zeit, öffnet bei Tipp auf die Termin-Kachel
+let kalenderZu = null;
+function oeffneKalender() {
+  const heute = jetzt().slice(0, 10);
+  const termine = kommendeTermine().filter(t => abstand(t.tag, heute) < K.kalenderTage);
+  const tage = [];
+  termine.forEach(t => {
+    if (!tage.length || tage[tage.length - 1].tag !== t.tag) tage.push({ tag: t.tag, termine: [] });
+    tage[tage.length - 1].termine.push(t);
+  });
+  $("kalender").classList.add("offen");
+  const liste = $("kalenderliste");
+  liste.innerHTML = tage.map(({ tag, termine }) => {
+    const name = tagName(tag, heute);
+    const kopf = name.includes(".") ? name : `${name}, ${tag.slice(8)}.${tag.slice(5, 7)}.`;
+    return `<div class="kalendertag${tag === heute ? " heute" : ""}"><h2>${kopf}</h2>`
+      + termine.map(t => `<div class="ktermin"><span>${t.uhrzeit || "ganztags"}</span><b>${text(t.titel)}</b></div>`).join("")
+      + `</div>`;
+  }).join("") || `<div class="leer">Keine Termine in den nächsten ${K.kalenderTage} Tagen</div>`;
+  // Was nicht mehr auf den Bildschirm passt, tageweise von hinten weglassen
+  let weg = 0;
+  while (liste.children.length > 1 && liste.scrollWidth > liste.clientWidth + 1) {
+    weg += liste.lastElementChild.querySelectorAll(".ktermin").length;
+    liste.lastElementChild.remove();
+  }
+  $("kalenderinfo").textContent = weg ? `+${weg} weitere` : `nächste ${K.kalenderTage} Tage`;
+  clearTimeout(kalenderZu);
+  kalenderZu = setTimeout(schliesseKalender, 60000);
+}
+
+function schliesseKalender() {
+  clearTimeout(kalenderZu);
+  $("kalender").classList.remove("offen");
 }
 
 let wetter = null;
@@ -405,10 +489,28 @@ function sicher(zeige) {
   try { zeige(); } catch (e) { console.error(e); }
 }
 
+// dashboard-update.py legt neben der Seite dashboard-stand.js ab, sobald es neue Daten geschrieben hat.
+// Fetch auf file:// ist gesperrt, ein Script-Tag darf die Datei aber laden; sie ruft datenStand() auf.
+function pruefeDaten() {
+  const s = document.createElement("script");
+  s.src = "dashboard-stand.js?" + Date.now();
+  s.onload = s.onerror = () => s.remove();
+  document.head.appendChild(s);
+}
+
+function datenStand(stand) {
+  if (stand === DATEN_STAND) return;
+  // Höchstens einmal je Stand neu laden, falls die Seite einmal nicht zur Datei passt
+  let schon = null;
+  try { schon = localStorage.getItem("datenStand"); localStorage.setItem("datenStand", stand); } catch (e) { return; }
+  if (schon !== stand) location.reload();
+}
+
 let letzteStunde = "";
 function tick() {
   const j = jetzt(), zeit = j.slice(11);
   if (zeit === K.neuLadenUm && performance.now() > 60000) location.reload();
+  if (Number(zeit.slice(3)) % 5 === 0) pruefeDaten();
   $("uhr").innerHTML = zeit.replace(":", "<span>:</span>");
   zeigeZeiger(zeit);
   sicher(zeigeBus);
@@ -421,10 +523,13 @@ function tick() {
     sicher(zeigeMuell);
     sicher(zeigeTermine);
     sicher(zeigeWetter);
+    sicher(zeigeVeraltet);
   }
   setTimeout(tick, 60000 - Date.now() % 60000);
 }
 
+$("termine").addEventListener("click", () => sicher(oeffneKalender));
+$("kalender").addEventListener("click", schliesseKalender);
 zeichneZifferblatt();
 tick();
 holeDaten();

@@ -5,6 +5,7 @@ Der Browser darf diese Daten von file:// aus nicht selbst laden. Private Angaben
 in dashboard-privat.conf neben der HTML-Datei. Schlägt eine Quelle fehl oder fehlt ihre
 Angabe, bleiben ihre bisherigen Daten in der Seite stehen.
 """
+import argparse
 import json
 import os
 import re
@@ -162,20 +163,76 @@ def kalender(privat):
     return sorted(termine)
 
 
+def block_muster(name):
+    return re.compile(rf"/\* {name}-START \*/.*?/\* {name}-ENDE \*/", re.S)
+
+
+def ersetze_block(html, name, inhalt):
+    return block_muster(name).sub(lambda _: f"/* {name}-START */\n{inhalt}\n/* {name}-ENDE */", html, count=1)
+
+
 def schreibe_block(html, name, konstante, zeilen):
     block = "\n".join(json.dumps(z, ensure_ascii=False).replace("<", "\\u003c") + "," for z in zeilen)
-    neu = f"/* {name}-START */\nconst {konstante} = [\n{block}\n];\n/* {name}-ENDE */"
-    return re.sub(rf"/\* {name}-START \*/.*?/\* {name}-ENDE \*/", lambda _: neu, html, count=1, flags=re.S)
+    return ersetze_block(html, name, f"const {konstante} = [\n{block}\n];")
+
+
+QUELLEN = (("MUELL", "MUELL_TERMINE", muell),
+           ("BUS", "BUS_ABFAHRTEN", bus),
+           ("KALENDER", "KALENDER_TERMINE", kalender))
+
+
+def lies_erfolg(html):
+    """Tag des letzten erfolgreichen Abrufs je Quelle, z. B. {"BUS": "2026-11-17"}."""
+    treffer = re.search(r"const DATEN_ERFOLG = (\{.*?\});", html, re.S)
+    try:
+        return json.loads(treffer.group(1)) if treffer else {}
+    except ValueError:
+        return {}
+
+
+def uebernimm_daten(alt, neu):
+    """Trägt die Daten einer bisherigen Seite in eine neue Fassung der Seite ein."""
+    for name in [q[0] for q in QUELLEN] + ["ERFOLG"]:
+        treffer = block_muster(name).search(alt)
+        if treffer and block_muster(name).search(neu):
+            neu = block_muster(name).sub(lambda _: treffer.group(0), neu, count=1)
+    return neu
+
+
+def schreibe_datei(pfad, text, vorbild=None):
+    """Schreibt erst eine Kopie und tauscht sie dann aus, damit nie eine halbe Datei liegt."""
+    neu = pfad.with_name(pfad.name + ".neu")
+    neu.write_text(text, encoding="utf-8", newline="\n")
+    if vorbild:
+        shutil.copymode(vorbild, neu)
+    os.replace(neu, pfad)
 
 
 def main():
-    seite = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.home() / "dashboard.html"
+    argumente = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    argumente.add_argument("seite", nargs="?", type=Path, default=Path.home() / "dashboard.html")
+    argumente.add_argument("--nur", nargs="+", metavar="QUELLE",
+                           choices=[name.lower() for name, _, _ in QUELLEN],
+                           help="nur diese Quellen abrufen, z. B. --nur kalender")
+    argumente.add_argument("--nachholen", action="store_true",
+                           help="den Kalender immer abrufen, die übrigen Quellen nur, "
+                                "wenn sie heute noch nicht erfolgreich waren")
+    argumente.add_argument("--daten-aus", type=Path, metavar="ALTE_SEITE",
+                           help="vorher die Daten einer bisherigen Seite übernehmen (nach einem Update)")
+    optionen = argumente.parse_args()
+    seite = optionen.seite
     privat = lies_privat(seite.with_name("dashboard-privat.conf"))
-    html = seite.read_text(encoding="utf-8")
+    alt = html = seite.read_text(encoding="utf-8")
+    if optionen.daten_aus and optionen.daten_aus.exists():
+        html = uebernimm_daten(optionen.daten_aus.read_text(encoding="utf-8"), html)
+    erfolg = lies_erfolg(html)
+    heute = date.today().isoformat()
     fehlgeschlagen = False
-    for name, konstante, quelle in (("MUELL", "MUELL_TERMINE", muell),
-                                    ("BUS", "BUS_ABFAHRTEN", bus),
-                                    ("KALENDER", "KALENDER_TERMINE", kalender)):
+    for name, konstante, quelle in QUELLEN:
+        if optionen.nur and name.lower() not in optionen.nur:
+            continue
+        if optionen.nachholen and name != "KALENDER" and erfolg.get(name) == heute:
+            continue
         if f"/* {name}-START */" not in html:
             print(f"{name}: Block fehlt in {seite}", file=sys.stderr)
             fehlgeschlagen = True
@@ -190,11 +247,23 @@ def main():
             print(f"{name}: nicht eingerichtet, übersprungen")
             continue
         html = schreibe_block(html, name, konstante, zeilen)
+        erfolg[name] = heute
         print(f"{name}: {len(zeilen)} Einträge")
-    neu = seite.with_suffix(".neu")
-    neu.write_text(html, encoding="utf-8", newline="\n")
-    shutil.copymode(seite, neu)
-    os.replace(neu, seite)
+    # Nur das Datum, damit sich die Seite durch den stündlichen Abruf nicht stündlich neu lädt
+    html = ersetze_block(html, "ERFOLG", f"const DATEN_ERFOLG = {json.dumps(erfolg, sort_keys=True)};")
+    if html == alt:
+        print("Keine Änderung, Seite bleibt unverändert")
+        sys.exit(1 if fehlgeschlagen else 0)
+    # Die offene Seite vergleicht diesen Stand mit ihrem eigenen und lädt sich bei Abweichung neu
+    stand = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    if block_muster("STAND").search(html):
+        html = ersetze_block(html, "STAND", f'const DATEN_STAND = "{stand}";')
+    else:
+        print(f"STAND: Block fehlt in {seite}, die Seite übernimmt neue Daten erst beim Neuladen",
+              file=sys.stderr)
+    schreibe_datei(seite, html, vorbild=seite)
+    # Erst nach der Seite schreiben, sonst lädt sie sich womöglich neu, bevor die Daten drinstehen
+    schreibe_datei(seite.with_name("dashboard-stand.js"), f'datenStand("{stand}");\n')
     sys.exit(1 if fehlgeschlagen else 0)
 
 
