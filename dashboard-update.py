@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Holt Mülltermine, Busabfahrten und Kalendertermine und schreibt sie in dashboard.html.
+"""Holt Mülltermine, Busabfahrten, Kalendertermine und Spritpreise und schreibt sie in dashboard.html.
 
 Der Browser darf diese Daten von file:// aus nicht selbst laden. Private Angaben stehen
 in dashboard-privat.conf neben der HTML-Datei. Schlägt eine Quelle fehl oder fehlt ihre
@@ -22,6 +22,8 @@ ALBA = "https://alba-bs.de/service/abfuhrtermine/ajax-kalender.html"
 TRANSITOUS = "https://api.transitous.org/api/v5/stoptimes"
 BUS_ANZAHL = 200       # reicht für gut zwei Tage, falls ein nächtlicher Abruf ausfällt
 KALENDER_TAGE = 60
+TANKERKOENIG = "https://creativecommons.tankerkoenig.de/json/"
+TANK_ANZAHL = 10
 USER_AGENT = "wand-dashboard/2.0"
 
 
@@ -76,7 +78,7 @@ def lokale_zeit(parameter, wert):
     return zeit.replace(tzinfo=zone).astimezone(BERLIN).replace(tzinfo=None)
 
 
-def muell(privat):
+def muell(privat, _html=None):
     if not privat.get("MUELL_STRASSE"):
         return None
     p = "tx_mfabfallkalender_mfabfallkalender"
@@ -101,7 +103,7 @@ def muell(privat):
     return sorted(termine)
 
 
-def bus(privat):
+def bus(privat, _html=None):
     steig, kontakt = privat.get("BUS_STEIG"), privat.get("KONTAKT")
     if not steig or not kontakt:   # Transitous verlangt eine Kontaktangabe
         return None
@@ -126,7 +128,7 @@ def wiederholungen(ereignis, start, bis):
     return list(rrulestr(text, dtstart=start).between(heute, bis, inc=True))
 
 
-def kalender(privat):
+def kalender(privat, _html=None):
     urls = privat.get("KALENDER_URLS", "").split()
     if not urls:
         return None
@@ -163,6 +165,66 @@ def kalender(privat):
     return sorted(termine)
 
 
+def tanken(privat, html):
+    """Spritpreise der nächstgelegenen Tankstellen von Tankerkönig (Daten der MTS-K, CC BY 4.0).
+
+    Die Liste der Tankstellen kommt einmal am Tag über list.php, danach nur noch die Preise
+    über prices.php, wie Tankerkönig es für regelmäßige Abrufe verlangt.
+    """
+    schluessel = privat.get("TANKERKOENIG_KEY")
+    if not schluessel:
+        return None
+    jetzt = datetime.now().astimezone().isoformat(timespec="seconds")
+    alt = lies_liste(html, "TANKEN")
+    if alt and alt[0].get("liste") == date.today().isoformat():
+        ids = ",".join(s["id"] for s in alt)
+        antwort = json.loads(lade(TANKERKOENIG + "prices.php?" + urllib.parse.urlencode(
+            {"ids": ids, "apikey": schluessel})))
+        if not antwort.get("ok"):
+            raise ValueError(antwort.get("message", "Abruf fehlgeschlagen"))
+        stationen = []
+        for s in alt:
+            preise = antwort.get("prices", {}).get(s["id"], {})
+            stationen.append({**s, "offen": preise.get("status") == "open", "zeit": jetzt,
+                              **{sorte: preise.get(sorte) or None for sorte in ("e5", "e10", "diesel")}})
+        return stationen
+    lage = {k: re.search(rf"{k}:\s*([\d.]+)", html) for k in ("breite", "laenge")}
+    if not all(lage.values()):
+        raise ValueError("Standort (breite/laenge) nicht in der Seite gefunden")
+    antwort = json.loads(lade(TANKERKOENIG + "list.php?" + urllib.parse.urlencode({
+        "lat": lage["breite"].group(1), "lng": lage["laenge"].group(1),
+        "rad": privat.get("TANK_RADIUS", "5"), "sort": "dist", "type": "all", "apikey": schluessel})))
+    if not antwort.get("ok"):
+        raise ValueError(antwort.get("message", "Abruf fehlgeschlagen"))
+    stationen = []
+    for s in antwort.get("stations", [])[:TANK_ANZAHL]:   # prices.php nimmt höchstens 10 IDs
+        marke = (s.get("brand") or s.get("name") or "").strip().title()
+        strasse = (s.get("street") or "").strip().title()
+        stationen.append({"id": s["id"], "name": ", ".join(x for x in (marke, strasse) if x),
+                          "km": s.get("dist"), "liste": date.today().isoformat(),
+                          "offen": bool(s.get("isOpen")), "zeit": jetzt,
+                          **{sorte: s.get(sorte) or None for sorte in ("e5", "e10", "diesel")}})
+    if not stationen:
+        raise ValueError("keine Tankstellen im Umkreis gefunden")
+    return stationen
+
+
+def lies_liste(html, name):
+    """Liest die Einträge eines Datenblocks wieder ein, je Zeile ein JSON-Wert."""
+    treffer = block_muster(name).search(html)
+    if not treffer:
+        return []
+    eintraege = []
+    for zeile in treffer.group(0).splitlines():
+        zeile = zeile.strip().rstrip(",")
+        if zeile[:1] in ("{", '"'):
+            try:
+                eintraege.append(json.loads(zeile))
+            except ValueError:
+                pass
+    return eintraege
+
+
 def block_muster(name):
     return re.compile(rf"/\* {name}-START \*/.*?/\* {name}-ENDE \*/", re.S)
 
@@ -178,7 +240,10 @@ def schreibe_block(html, name, konstante, zeilen):
 
 QUELLEN = (("MUELL", "MUELL_TERMINE", muell),
            ("BUS", "BUS_ABFAHRTEN", bus),
-           ("KALENDER", "KALENDER_TERMINE", kalender))
+           ("KALENDER", "KALENDER_TERMINE", kalender),
+           ("TANKEN", "TANKEN", tanken))
+# Diese Quellen holt --nachholen bei jedem Lauf, die übrigen nur einmal am Tag
+STUENDLICH = ("KALENDER", "TANKEN")
 
 
 def lies_erfolg(html):
@@ -215,7 +280,7 @@ def main():
                            choices=[name.lower() for name, _, _ in QUELLEN],
                            help="nur diese Quellen abrufen, z. B. --nur kalender")
     argumente.add_argument("--nachholen", action="store_true",
-                           help="den Kalender immer abrufen, die übrigen Quellen nur, "
+                           help="Kalender und Spritpreise immer abrufen, die übrigen Quellen nur, "
                                 "wenn sie heute noch nicht erfolgreich waren")
     argumente.add_argument("--daten-aus", type=Path, metavar="ALTE_SEITE",
                            help="vorher die Daten einer bisherigen Seite übernehmen (nach einem Update)")
@@ -231,14 +296,14 @@ def main():
     for name, konstante, quelle in QUELLEN:
         if optionen.nur and name.lower() not in optionen.nur:
             continue
-        if optionen.nachholen and name != "KALENDER" and erfolg.get(name) == heute:
+        if optionen.nachholen and name not in STUENDLICH and erfolg.get(name) == heute:
             continue
         if f"/* {name}-START */" not in html:
             print(f"{name}: Block fehlt in {seite}", file=sys.stderr)
             fehlgeschlagen = True
             continue
         try:
-            zeilen = quelle(privat)
+            zeilen = quelle(privat, html)
         except Exception as fehler:
             print(f"{name}: {fehler}, bisherige Daten bleiben", file=sys.stderr)
             fehlgeschlagen = True
