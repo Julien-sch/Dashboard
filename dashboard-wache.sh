@@ -2,6 +2,7 @@
 # Läuft jede Minute per Cron (eingerichtet von setup.sh):
 #  - schaltet den Bildschirm nachts aus, sobald eine Weile niemand das Display berührt hat;
 #    eine Berührung weckt ihn wieder
+#  - hält den Bildschirm nach dem Sprachbefehl "Bildschirm aus" im Nachtverhalten
 #  - startet den Kiosk-Firefox neu, falls er abgestürzt ist
 # Für Wartung am Tablet pausieren:  touch ~/dashboard-pause   (danach wieder löschen)
 
@@ -24,6 +25,15 @@ if [ "$AUS_VON" -le "$AUS_BIS" ]; then
 	{ [ "$jetzt" -ge "$AUS_VON" ] && [ "$jetzt" -lt "$AUS_BIS" ]; } && nachts=1 || nachts=0
 else
 	{ [ "$jetzt" -ge "$AUS_VON" ] || [ "$jetzt" -lt "$AUS_BIS" ]; } && nachts=1 || nachts=0
+fi
+# Per Sprachbefehl "Bildschirm aus" (dashboard-befehl.py): wie nachts behandeln, bis "Bildschirm an"
+# kommt oder die nächste Nacht um AUS_BIS endet
+AUS_DATEI=$HOME/dashboard-bildschirm-aus
+if [ -e "$AUS_DATEI" ]; then
+	gesetzt=$(date -r "$AUS_DATEI" +%s)
+	ende=$(date -d "$(date -r "$AUS_DATEI" +%F) ${AUS_BIS%??}:${AUS_BIS#??}" +%s)
+	[ "$gesetzt" -lt "$ende" ] || ende=$((ende + 86400))
+	if [ "$(date +%s)" -ge "$ende" ]; then rm -f "$AUS_DATEI"; else nachts=1; fi
 fi
 if xset q | grep -q "DPMS is Enabled"; then
 	[ "$nachts" = 1 ] || { xset dpms force on; xset -dpms; }

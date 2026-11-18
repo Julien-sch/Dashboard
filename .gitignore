@@ -1,3 +1,5 @@
 dashboard-privat.conf
 dashboard-stand.js
 *.neu
+__pycache__/
+dashboard-sport.js

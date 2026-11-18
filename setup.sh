@@ -12,6 +12,7 @@ QUELLE=$(cd "$(dirname "$0")" && pwd)
 SEITE=$HOME/dashboard.html
 UPDATE=$HOME/dashboard-update.py
 WACHE=$HOME/dashboard-wache.sh
+BEFEHL=$HOME/dashboard-befehl.py
 PRIVAT=$HOME/dashboard-privat.conf
 STARTUP=$HOME/.desktop-session/startup
 PROFIL=$HOME/.dashboard-firefox
@@ -24,6 +25,8 @@ neustart_job() {
 	echo "# Von setup.sh des Dashboards angelegt. Entfernen: sh setup.sh --entfernen"
 	echo "$NEUSTART_ZEIT * * * root [ -e \"$HOME/dashboard-pause\" ] || /sbin/shutdown -r now"
 }
+# Erlaubt dem Sprachbefehl "Neustart" (dashboard-befehl.py) genau diesen einen Befehl ohne Passwort
+SUDOERS=/etc/sudoers.d/dashboard
 
 entferne_autostart() {
 	if [ -f "$STARTUP" ]; then
@@ -46,8 +49,8 @@ if [ "${1:-}" = "--entfernen" ]; then
 	entferne_autostart
 	entferne_cron
 	rm -rf "$PROFIL"
-	if [ -f "$NEUSTART" ]; then
-		sudo rm -f "$NEUSTART" || echo "WARNUNG: $NEUSTART bitte selbst mit sudo löschen." >&2
+	if [ -f "$NEUSTART" ] || sudo -n -l /sbin/shutdown -r now >/dev/null 2>&1; then
+		sudo rm -f "$NEUSTART" "$SUDOERS" || echo "WARNUNG: $NEUSTART und $SUDOERS bitte selbst mit sudo löschen." >&2
 	fi
 	echo "Autostart, Cron-Jobs, geplanter Neustart und Firefox-Profil entfernt."
 	exit 0
@@ -66,7 +69,7 @@ fi
 # Aus einem Repo-Ordner die Dateien nach $HOME holen, die Daten der alten Seite merken
 DATEN_AUS=""
 if [ "$QUELLE" != "$HOME" ]; then
-	for datei in dashboard.html dashboard-update.py dashboard-wache.sh; do
+	for datei in dashboard.html dashboard-update.py dashboard-wache.sh dashboard-befehl.py; do
 		[ -f "$QUELLE/$datei" ] || { echo "Nicht gefunden: $QUELLE/$datei" >&2; exit 1; }
 	done
 	if [ -f "$SEITE" ]; then
@@ -76,10 +79,11 @@ if [ "$QUELLE" != "$HOME" ]; then
 	cp "$QUELLE/dashboard.html" "$SEITE"
 	cp "$QUELLE/dashboard-update.py" "$UPDATE"
 	cp "$QUELLE/dashboard-wache.sh" "$WACHE"
+	cp "$QUELLE/dashboard-befehl.py" "$BEFEHL"
 	echo "Dateien aus $QUELLE übernommen."
 fi
 
-for datei in "$SEITE" "$UPDATE" "$WACHE"; do
+for datei in "$SEITE" "$UPDATE" "$WACHE" "$BEFEHL"; do
 	[ -f "$datei" ] || { echo "Nicht gefunden: $datei" >&2; exit 1; }
 done
 
@@ -130,6 +134,21 @@ elif neustart_job | sudo tee "$NEUSTART" >/dev/null && sudo chmod 644 "$NEUSTART
 else
 	echo "WARNUNG: Geplanter Neustart konnte nicht eingetragen werden (sudo nötig)." >&2
 fi
+
+# Sprachbefehle per Siri: Neustart ohne Passwort erlauben (die Regel wird vor dem Eintragen geprüft)
+if sudo -n -l /sbin/shutdown -r now >/dev/null 2>&1; then
+	echo "Neustart per Sprachbefehl ist erlaubt."
+else
+	regel=$(mktemp)
+	echo "$(id -un) ALL=(root) NOPASSWD: /sbin/shutdown -r now" > "$regel"
+	if sudo visudo -cf "$regel" >/dev/null && sudo install -m 440 -o root -g root "$regel" "$SUDOERS"; then
+		echo "Neustart per Sprachbefehl erlaubt: $SUDOERS"
+	else
+		echo "WARNUNG: Neustart per Sprachbefehl konnte nicht erlaubt werden (sudo nötig)." >&2
+	fi
+	rm -f "$regel"
+fi
+[ -x /usr/sbin/sshd ] || echo "HINWEIS: Für die Siri-Befehle fehlt der SSH-Server: sudo apt install openssh-server"
 
 rm -f "$HOME/muell-update.sh"
 python3 "$UPDATE" "$SEITE" $DATEN_AUS || echo "WARNUNG: Nicht alle Daten konnten geladen werden." >&2
