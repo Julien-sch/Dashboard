@@ -36,6 +36,8 @@ Die bisherigen Daten bleiben dabei erhalten, die offene Seite lädt sich danach 
 
 - **Stündlich um :47:** Kalender und Spritpreise abrufen. Müll und Bus einmal am Tag, bei einem Fehlschlag stündlich erneut.
 - **Nach dem Hochfahren:** fehlende Daten sofort nachholen.
+- **Täglich um 11:30 und 23:30:** Neustart des Tablets, falls das WLAN hängt (`/etc/cron.d/dashboard-neustart`,
+  `setup.sh` fragt dafür einmal nach dem sudo-Passwort). Fällt aus, solange `~/dashboard-pause` existiert.
 - **Jede Minute** (`dashboard-wache.sh`): Firefox nach einem Absturz neu starten, Bildschirm von 0 bis 6 Uhr
   nach 2 Minuten ohne Berührung abschalten. Pausieren für Wartung: `touch ~/dashboard-pause`, danach wieder löschen.
 - Schlägt ein Abruf länger als einen Tag fehl, steht unten links „Daten veraltet“.

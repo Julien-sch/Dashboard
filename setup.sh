@@ -15,6 +15,15 @@ WACHE=$HOME/dashboard-wache.sh
 PRIVAT=$HOME/dashboard-privat.conf
 STARTUP=$HOME/.desktop-session/startup
 PROFIL=$HOME/.dashboard-firefox
+# Neustart gegen hängendes WLAN, täglich um 11:30 und 23:30 (Minute Stunden, Cron-Format).
+# Braucht Root, darum ein eigener Eintrag in /etc/cron.d statt in der Crontab des Nutzers.
+NEUSTART=/etc/cron.d/dashboard-neustart
+NEUSTART_ZEIT="30 11,23"
+
+neustart_job() {
+	echo "# Von setup.sh des Dashboards angelegt. Entfernen: sh setup.sh --entfernen"
+	echo "$NEUSTART_ZEIT * * * root [ -e \"$HOME/dashboard-pause\" ] || /sbin/shutdown -r now"
+}
 
 entferne_autostart() {
 	if [ -f "$STARTUP" ]; then
@@ -37,7 +46,10 @@ if [ "${1:-}" = "--entfernen" ]; then
 	entferne_autostart
 	entferne_cron
 	rm -rf "$PROFIL"
-	echo "Autostart, Cron-Jobs und Firefox-Profil entfernt."
+	if [ -f "$NEUSTART" ]; then
+		sudo rm -f "$NEUSTART" || echo "WARNUNG: $NEUSTART bitte selbst mit sudo löschen." >&2
+	fi
+	echo "Autostart, Cron-Jobs, geplanter Neustart und Firefox-Profil entfernt."
 	exit 0
 fi
 
@@ -108,6 +120,15 @@ if command -v crontab >/dev/null 2>&1; then
 	echo "Cron-Jobs eingetragen."
 else
 	echo "WARNUNG: crontab fehlt, die Daten werden nicht automatisch aktualisiert." >&2
+fi
+
+# Geplanter Neustart; nach sudo wird nur gefragt, wenn sich der Eintrag geändert hat
+if neustart_job | cmp -s - "$NEUSTART" 2>/dev/null; then
+	echo "Geplanter Neustart ist eingerichtet (11:30 und 23:30)."
+elif neustart_job | sudo tee "$NEUSTART" >/dev/null && sudo chmod 644 "$NEUSTART"; then
+	echo "Geplanter Neustart eingetragen: $NEUSTART (11:30 und 23:30)."
+else
+	echo "WARNUNG: Geplanter Neustart konnte nicht eingetragen werden (sudo nötig)." >&2
 fi
 
 rm -f "$HOME/muell-update.sh"
