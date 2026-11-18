@@ -49,7 +49,7 @@ if [ "${1:-}" = "--entfernen" ]; then
 	entferne_autostart
 	entferne_cron
 	rm -rf "$PROFIL"
-	if [ -f "$NEUSTART" ] || sudo -n -l /sbin/shutdown -r now >/dev/null 2>&1; then
+	if [ -f "$NEUSTART" ] || [ -f "$SUDOERS" ]; then
 		sudo rm -f "$NEUSTART" "$SUDOERS" || echo "WARNUNG: $NEUSTART und $SUDOERS bitte selbst mit sudo löschen." >&2
 	fi
 	echo "Autostart, Cron-Jobs, geplanter Neustart und Firefox-Profil entfernt."
@@ -136,7 +136,8 @@ else
 fi
 
 # Sprachbefehle per Siri: Neustart ohne Passwort erlauben (die Regel wird vor dem Eintragen geprüft)
-if sudo -n -l /sbin/shutdown -r now >/dev/null 2>&1; then
+# Auf die Datei prüfen, nicht mit sudo -n: ein kurz vorher eingegebenes sudo-Passwort täuscht sonst
+if [ -f "$SUDOERS" ]; then
 	echo "Neustart per Sprachbefehl ist erlaubt."
 else
 	regel=$(mktemp)
