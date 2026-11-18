@@ -354,7 +354,7 @@ def anzeige_spiel(s, markiert=()):
     return {"heim": s["heim"], "gast": s["gast"], "status": s["status"],
             "stand": "" if s["status"] == "vor" else f"{h}:{g}",
             "info": kurz_wann(s["anpfiff"]) if s["status"] == "vor" else s["info"],
-            "markiert": s["hw"] in markiert or s["gw"] in markiert}
+            "markiert": "heim" if s["hw"] in markiert else "gast" if s["gw"] in markiert else ""}
 
 
 def anzeige_runde(liga, runde, spiele=None, markiert=(), hinweis=""):

@@ -220,40 +220,44 @@ const DATEN_STAND = "";
   .ktermin span { color: var(--leise); font-size: 4.6rem; align-self: center; }
   .ktermin b { overflow: hidden; text-overflow: ellipsis; font-weight: normal; border-left: .6rem solid var(--termin); padding-left: 1.5rem; }
 
-  /* Sport-Einblendung nach dem Sprachbefehl, liegt über allem, auch über dem Kalender */
+  /* Sport-Einblendung nach dem Sprachbefehl, liegt über allem, auch über dem Kalender.
+     Derselbe Himmel wie die Seite, je Liga eine Karte, das Ergebnis als Feld in der Mitte. */
   #sport {
     position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 11;
     display: none; flex-direction: column; gap: 2.5rem; padding: 3rem 4rem;
-    background: var(--grund);
+    background-color: var(--grund); background-image: var(--himmel, none);
   }
   #sport.offen { display: flex; }
-  #sport h1 { display: flex; justify-content: space-between; align-items: baseline; font-size: 9rem; line-height: 1; }
-  #sport h1 small { font-size: 5rem; font-weight: normal; color: var(--leise); }
-  #sportliste { flex: 1; min-height: 0; columns: 2; column-gap: 5rem; column-fill: auto; overflow: hidden; }
-  .liga { padding-bottom: 2.2rem; }
-  .liga h2 {
-    margin-bottom: .8rem; padding-bottom: .5rem; border-bottom: .25rem solid var(--linie);
-    font-size: 5rem; font-weight: normal; color: var(--leise); break-after: avoid;
+  #sport h1 { display: flex; justify-content: space-between; align-items: baseline; gap: 3rem; font-size: 9rem; line-height: 1; }
+  #sport h1 small { font-size: 4.6rem; font-weight: normal; color: var(--leise); white-space: nowrap; }
+  #sportliste {
+    flex: 1; min-height: 0; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; align-content: start; align-items: start;
   }
+  .liga { padding: 2.2rem 3rem 1.2rem; border-radius: 3rem; background: var(--karte); }
+  .einzeln .liga, .gross .liga { grid-column: 1 / -1; }
+  .liga h2 { display: flex; align-items: baseline; gap: 2rem; margin-bottom: .6rem; font-size: 5.4rem; line-height: 1.1; }
+  .liga h2 small { font-size: 4.4rem; font-weight: normal; color: var(--leise); }
+  .einzeln:not(.gross) .spiele { columns: 2; column-gap: 7rem; column-rule: .2rem solid var(--linie); }
   .spiel {
-    display: grid; grid-template-columns: 1fr 17rem 1fr 7rem; gap: 1.5rem; align-items: baseline;
-    padding: 0 1rem; border-radius: 1.5rem; break-inside: avoid;
-    font: 4.6rem/1.4 "DejaVu Sans Condensed", "DejaVu Sans", sans-serif; white-space: nowrap;
+    display: grid; grid-template-columns: 1fr 17rem 1fr; gap: 2rem; align-items: center;
+    padding: .8rem 0; break-inside: avoid;
+    font: 4.8rem/1.2 "DejaVu Sans Condensed", "DejaVu Sans", sans-serif; white-space: nowrap;
   }
-  .spiel span { overflow: hidden; text-overflow: ellipsis; }
-  .spiel span:first-child { text-align: right; }
-  .spiel b { text-align: center; }
-  .spiel.vor b { font-size: 3.6rem; font-weight: normal; color: var(--leise); }
-  .spiel.laeuft b, .spiel small { color: var(--akzent); }
-  .spiel small { font-size: 3.4rem; }
-  .spiel.markiert { background: var(--karte); outline: .3rem solid var(--akzent); }
-  .sporthinweis { font-size: 4rem; color: var(--leise); padding: .5rem 1rem 0; }
-  /* Wenige Spiele, etwa bei einem Team: eine Spalte, große Schrift */
-  #sportliste.gross { columns: 1; max-width: 130rem; }
-  #sportliste.gross .spiel { grid-template-columns: 1fr 26rem 1fr 16rem; font-size: 7.5rem; }
-  #sportliste.gross .spiel.vor b { font-size: 5.4rem; }
-  #sportliste.gross .spiel small { font-size: 4.6rem; }
-  #sportliste.gross .liga h2 { font-size: 5.6rem; }
+  .spiel > span { overflow: hidden; text-overflow: ellipsis; }
+  .spiel > span:first-child { text-align: right; }
+  .spiel b { padding: .3rem 0; border-radius: 1.6rem; background: var(--linie); text-align: center; }
+  .spiel.vor b { background: none; font-size: 3.8rem; font-weight: normal; color: var(--leise); }
+  .spiel.laeuft b { background: var(--akzent); color: #000; }
+  /* Spielstatus ("3. Viertel", "live") klein im Ergebnisfeld */
+  .spiel b small { display: block; padding-bottom: .2rem; font-size: 2.6rem; font-weight: normal; line-height: 1; }
+  .spiel .team { font-weight: bold; color: var(--akzent); }
+  .sporthinweis { margin-top: .4rem; padding: 1rem 0 .4rem; border-top: .2rem solid var(--linie); font-size: 4rem; color: var(--leise); }
+  /* Wenige Spiele, etwa bei einem Team: große Zeilen über die volle Breite */
+  .gross .spiel { grid-template-columns: 1fr 30rem 1fr; gap: 3.5rem; padding: 1.8rem 0; font-size: 8rem; }
+  .gross .spiel b { border-radius: 2.6rem; }
+  .gross .spiel.vor b { font-size: 5.6rem; }
+  .gross .spiel b small { font-size: 4rem; }
 
   #fuss { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 3rem; white-space: nowrap; }
   #quellen { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; font-size: 2.4rem; color: var(--leise); opacity: .7; }
@@ -691,20 +695,29 @@ function sportAnzeige(d) {
   $("sport").classList.add("offen");
   $("sporttitel").textContent = d.titel;
   const liste = $("sportliste");
-  liste.innerHTML = d.ligen.map(l => `<div class="liga"><h2>${text(l.name)}${l.runde ? " · " + text(l.runde) : ""}</h2>`
-    + l.spiele.map(s => `<div class="spiel ${s.status}${s.markiert ? " markiert" : ""}"><span>${text(s.heim)}</span>`
-      + `<b>${text(s.stand || s.info)}</b><span>${text(s.gast)}</span><small>${s.stand ? text(s.info) : ""}</small></div>`).join("")
-    + (l.hinweis ? `<div class="sporthinweis">${text(l.hinweis)}</div>` : "") + `</div>`).join("");
-  liste.classList.toggle("gross", liste.querySelectorAll(".spiel").length <= 6);
+  // Das gefragte Team leuchtet; der Spielstatus (z. B. "3. Viertel") steht klein im Ergebnisfeld.
+  // Steht der Liganame schon im Titel, trägt die Karte nur den Spieltag.
+  const team = (s, seite) => `<span${s.markiert === seite ? ' class="team"' : ""}>${text(s[seite])}</span>`;
+  liste.innerHTML = d.ligen.map(l => `<div class="liga"><h2>${l.name === d.titel ? "" : text(l.name)}`
+    + `${l.runde ? ` <small>${text(l.runde)}</small>` : ""}</h2><div class="spiele">`
+    + l.spiele.map(s => `<div class="spiel ${s.status}">${team(s, "heim")}`
+      + `<b>${text(s.stand || s.info)}${s.stand && s.info ? `<small>${text(s.info)}</small>` : ""}</b>`
+      + team(s, "gast") + `</div>`).join("")
+    + `</div>${l.hinweis ? `<div class="sporthinweis">${text(l.hinweis)}</div>` : ""}</div>`).join("");
+  liste.className = (d.ligen.length === 1 ? "einzeln" : "")
+    + (liste.querySelectorAll(".spiel").length <= 6 ? " gross" : "");
   // Was nicht auf den Bildschirm passt, von hinten weglassen
   let weg = 0;
-  while (liste.scrollWidth > liste.clientWidth + 1) {
+  while (liste.scrollHeight > liste.clientHeight + 1) {
     const spiele = liste.querySelectorAll(".spiel");
     if (spiele.length < 2) break;
-    spiele[spiele.length - 1].remove();
+    const letzte = spiele[spiele.length - 1], karte = letzte.closest(".liga");
+    letzte.remove();
     weg++;
+    if (!karte.querySelector(".spiel")) karte.remove();
   }
-  $("sportinfo").textContent = weg ? `+${weg} weitere` : "";
+  $("sportinfo").textContent = `Stand ${isoFormat.format(new Date(d.zeit)).slice(11, 16)}`
+    + (weg ? ` · ${weg} weitere ausgeblendet` : "");
   clearTimeout(sportZu);
   sportZu = setTimeout(schliesseSport, K.sportSekunden * 1000);
 }
