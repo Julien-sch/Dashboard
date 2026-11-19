@@ -12,7 +12,8 @@ const KONFIG = {
   zeitzone: "Europe/Berlin",
 
   // Kacheln ein- oder ausschalten und Anzahl der Einträge
-  kacheln: { stunden: true, tage: true, muell: true, bus: true, tanken: true, termine: true, warnung: true },
+  kacheln: { stunden: true, tage: true, muell: true, bus: true, tanken: true, termine: true, warnung: true, heizung: true },
+  heizungAnzahl: 3,     // so viele Räume stehen unter der Uhr, alle zeigt der Tipp auf die Kachel
   stundenAnzahl: 3,
   tageAnzahl: 3,
   muellAnzahl: 2,
@@ -117,9 +118,22 @@ const DATEN_STAND = "";
   #uhr { margin-top: 1.5rem; font-size: 15rem; font-weight: bold; line-height: 1.05; letter-spacing: -.03em; color: var(--uhr); }
   #uhr span { color: var(--leise); }
   #datum { font-size: 6.6rem; color: var(--leise); white-space: nowrap; }
-  #sonne { display: flex; gap: 3rem; margin-top: .8rem; color: var(--leise); white-space: nowrap; }
-  #sonne span { display: flex; align-items: center; gap: .6rem; }
-  #sonne svg { width: 6.6rem; height: 6.6rem; }
+
+  /* Heizung unter der Uhr, je Raum eine Zeile: Name, Ist-Temperatur, Soll-Temperatur */
+  /* Ein Raster für alle Räume, damit die Temperaturen untereinander stehen */
+  #heizung {
+    align-self: stretch; margin-top: 1.8rem; padding: 1rem 2.2rem;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; gap: 0 1.6rem;
+    line-height: 1.2; white-space: nowrap;
+  }
+  .raum { display: contents; }
+  .raum span { overflow: hidden; text-overflow: ellipsis; font: 5rem/1.2 "DejaVu Sans Condensed", "DejaVu Sans", sans-serif; color: var(--leise); }
+  .raum b { font-size: 5.6rem; text-align: right; }
+  /* Soll-Temperatur in der Akzentfarbe wie "Ziel" auf der Seite Zuhause */
+  .raum small { font: 4.6rem/1.2 "DejaVu Sans Condensed", "DejaVu Sans", sans-serif; color: var(--akzent); text-align: right; }
+  .raum small.aus { color: var(--leise); }
+  .raum.alt > *, .raumkarte.alt { opacity: .45; }
+  #heizung .mehr { grid-column: 1 / -1; font-size: 4rem; color: var(--leise); }
 
   /* Wetter */
   #wetter { display: flex; flex-direction: column; justify-content: space-between; min-height: 0; padding: 2.5rem; }
@@ -259,6 +273,25 @@ const DATEN_STAND = "";
   .gross .spiel.vor b { font-size: 5.6rem; }
   .gross .spiel b small { font-size: 4rem; }
 
+  /* Seite "Zuhause" nach Tipp auf die Heizung; je Gerätegruppe ein Abschnitt, Platz für mehr Smart Home */
+  #zuhause {
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 10;
+    display: none; flex-direction: column; gap: 3rem; padding: 3rem 4rem;
+    background-color: var(--grund); background-image: var(--himmel, none);
+  }
+  #zuhause.offen { display: flex; }
+  #zuhause h1 { display: flex; justify-content: space-between; align-items: baseline; gap: 3rem; font-size: 9rem; line-height: 1; }
+  #zuhause h1 small { font-size: 4.6rem; font-weight: normal; color: var(--leise); white-space: nowrap; }
+  #zuhauseliste { flex: 1; min-height: 0; overflow: hidden; }
+  .bereich h2 { margin-bottom: 1.5rem; font-size: 5rem; font-weight: normal; color: var(--leise); }
+  .bereich + .bereich { margin-top: 3rem; }
+  .geraete { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; }
+  .raumkarte { min-width: 0; padding: 2.2rem 3rem 2.6rem; border-radius: 3rem; background: var(--karte); white-space: nowrap; }
+  .raumkarte .name { overflow: hidden; text-overflow: ellipsis; font-size: 5.4rem; color: var(--leise); }
+  .raumkarte .ist { font-size: 16rem; font-weight: bold; line-height: 1.05; letter-spacing: -.03em; }
+  .raumkarte .soll { overflow: hidden; text-overflow: ellipsis; font: 5.4rem/1.2 "DejaVu Sans Condensed", "DejaVu Sans", sans-serif; color: var(--leise); }
+  .raumkarte .soll b { font-weight: normal; color: var(--akzent); }
+
   #fuss { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: baseline; gap: 3rem; white-space: nowrap; }
   #quellen { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; font-size: 2.4rem; color: var(--leise); opacity: .7; }
   #veraltet { font-size: 3.6rem; color: var(--warnung); }
@@ -274,8 +307,6 @@ const DATEN_STAND = "";
   <symbol id="regen" viewBox="0 0 48 48"><path d="M13 30h22a8 8 0 0 0 1-16 11 11 0 0 0-21-2 9 9 0 0 0-2 18zM16 36l-2 6M26 36l-2 6M36 36l-2 6"/></symbol>
   <symbol id="schnee" viewBox="0 0 48 48"><path d="M13 30h22a8 8 0 0 0 1-16 11 11 0 0 0-21-2 9 9 0 0 0-2 18zM15 38v.1M24 42v.1M33 38v.1"/></symbol>
   <symbol id="gewitter" viewBox="0 0 48 48"><path d="M13 30h22a8 8 0 0 0 1-16 11 11 0 0 0-21-2 9 9 0 0 0-2 18zM26 26l-6 10h8l-5 9"/></symbol>
-  <symbol id="aufgang" viewBox="0 0 48 48"><path d="M6 38h36M14 38a10 10 0 0 1 20 0M24 6v14M18 12l6-6 6 6"/></symbol>
-  <symbol id="untergang" viewBox="0 0 48 48"><path d="M6 38h36M14 38a10 10 0 0 1 20 0M24 6v14M18 14l6 6 6-6"/></symbol>
   <symbol id="frost" viewBox="0 0 48 48"><path d="M24 4v40M7 14l34 20M7 34l34-20M18 6l6 5 6-5M18 42l6-5 6 5M6 21l7-2-2-7M42 27l-7 2 2 7M6 27l7 2-2 7M42 21l-7-2 2-7"/></symbol>
   <symbol id="zapfsaeule" viewBox="0 0 48 48"><path d="M9 42V10a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4v32M5 42h28M14 18h10M29 21h3a3 3 0 0 1 3 3v10a3 3 0 0 0 6 0V17l-5-6"/></symbol>
   <symbol id="tonne-i" viewBox="0 0 48 48"><path fill="currentColor" stroke-width="2" d="M7 13h34v4H7zM11 20h26l-3 22H14z"/><path stroke-width="3" d="M19 12V7h10v5"/></symbol>
@@ -293,7 +324,7 @@ const DATEN_STAND = "";
   </svg>
   <div id="uhr"></div>
   <div id="datum"></div>
-  <div id="sonne"></div>
+  <div id="heizung" class="karte" style="display:none"></div>
 </section>
 <section id="wetter" class="karte"></section>
 <section id="alltag">
@@ -305,6 +336,10 @@ const DATEN_STAND = "";
 <section id="kalender">
   <h1>Termine <small id="kalenderinfo"></small></h1>
   <div id="kalenderliste"></div>
+</section>
+<section id="zuhause">
+  <h1>Zuhause <small id="zuhauseinfo"></small></h1>
+  <div id="zuhauseliste"></div>
 </section>
 <section id="sport">
   <h1><span id="sporttitel">Sport</span> <small id="sportinfo"></small></h1>
@@ -515,11 +550,6 @@ function zeigeWetter() {
     html += `</div>`;
   }
   $("wetter").innerHTML = html;
-
-  const heuteNr = d.time.indexOf(heute);
-  const uhrzeit = t => t.slice(11, 16).replace(/^0/, "");
-  $("sonne").innerHTML = heuteNr < 0 ? "" : `<span>${symbol("aufgang")}${uhrzeit(d.sunrise[heuteNr])}</span>`
-    + `<span>${symbol("untergang")}${uhrzeit(d.sunset[heuteNr])}</span>`;
 }
 
 // Himmelsfarben [oben, Horizont]; dazwischen wird je nach Uhrzeit gemischt
@@ -660,14 +690,17 @@ function sicher(zeige) {
   try { zeige(); } catch (e) { console.error(e); }
 }
 
-// dashboard-update.py legt neben der Seite dashboard-stand.js ab, sobald es neue Daten geschrieben hat.
-// Fetch auf file:// ist gesperrt, ein Script-Tag darf die Datei aber laden; sie ruft datenStand() auf.
-function pruefeDaten() {
+// Fetch auf file:// ist gesperrt, ein Script-Tag darf eine Datei neben der Seite aber laden.
+// Die Datei ruft dann eine Funktion der Seite auf, z. B. datenStand() oder heizungDaten().
+function ladeSkript(name) {
   const s = document.createElement("script");
-  s.src = "dashboard-stand.js?" + Date.now();
+  s.src = name + "?" + Date.now();
   s.onload = s.onerror = () => s.remove();
   document.head.appendChild(s);
 }
+
+// dashboard-update.py legt neben der Seite dashboard-stand.js ab, sobald es neue Daten geschrieben hat
+const pruefeDaten = () => ladeSkript("dashboard-stand.js");
 
 function datenStand(stand) {
   if (stand === DATEN_STAND) return;
@@ -680,18 +713,14 @@ function datenStand(stand) {
 // Nach dem Sprachbefehl "Sport" schreibt dashboard-befehl.py die Ergebnisse in dashboard-sport.js.
 // Die Seite schaut alle 3 Sekunden nach (wie oben per Script-Tag) und blendet Neues kurz ein.
 let sportGesehen = Date.now(), sportZu = null;
-function pruefeSport() {
-  const s = document.createElement("script");
-  s.src = "dashboard-sport.js?" + Date.now();
-  s.onload = s.onerror = () => s.remove();
-  document.head.appendChild(s);
-}
+const pruefeSport = () => ladeSkript("dashboard-sport.js");
 
 function sportAnzeige(d) {
   if (d.zeit <= sportGesehen) return;
   sportGesehen = d.zeit;
   if (Date.now() - d.zeit > 30000) return;   // zu alt, z. B. nach langem Hängen
   schliesseKalender();
+  schliesseZuhause();
   $("sport").classList.add("offen");
   $("sporttitel").textContent = d.titel;
   const liste = $("sportliste");
@@ -727,11 +756,61 @@ function schliesseSport() {
   $("sport").classList.remove("offen");
 }
 
+// dashboard-heizung.py fragt die Thermostate alle 5 Minuten ab und schreibt dashboard-heizung.js,
+// die Seite lädt die Datei jede Minute. Werte älter als 20 Minuten erscheinen blass.
+let heizung = null, zuhauseZu = null;
+const pruefeHeizung = () => ladeSkript("dashboard-heizung.js");
+const zehntelGrad = t => t == null ? "–" : t.toFixed(1).replace(".", ",").replace("-", "−") + "°";
+const sollGrad = t => t == null ? "–" : String(t).replace(".", ",") + "°";
+const heizungAktuell = r => Date.now() - r.stand < 20 * 60000;
+const uhrzeitVon = ms => isoFormat.format(new Date(ms)).slice(11, 16);
+
+function heizungDaten(d) {
+  heizung = d;
+  sicher(zeigeHeizung);
+  if ($("zuhause").classList.contains("offen")) sicher(fuelleZuhause);
+}
+
+function zeigeHeizung() {
+  const box = $("heizung");
+  const raeume = K.kacheln.heizung && heizung ? heizung.raeume : [];
+  box.style.display = raeume.length ? "" : "none";
+  const n = K.heizungAnzahl;
+  box.innerHTML = raeume.slice(0, n).map(r =>
+    `<div class="raum${heizungAktuell(r) ? "" : " alt"}"><span>${text(r.name)}</span><b>${zehntelGrad(r.ist)}</b>`
+    + (r.an ? `<small>${sollGrad(r.soll)}</small>` : `<small class="aus">aus</small>`) + `</div>`
+  ).join("") + (raeume.length > n ? `<div class="mehr">+${raeume.length - n} weitere</div>` : "");
+}
+
+function fuelleZuhause() {
+  const raeume = heizung ? heizung.raeume : [];
+  $("zuhauseinfo").textContent = heizung ? `Stand ${uhrzeitVon(heizung.zeit)}` : "";
+  $("zuhauseliste").innerHTML = `<div class="bereich"><h2>Heizung</h2><div class="geraete">`
+    + raeume.map(r => `<div class="raumkarte${heizungAktuell(r) ? "" : " alt"}"><div class="name">${text(r.name)}</div>`
+      + `<div class="ist">${zehntelGrad(r.ist)}</div>`
+      + `<div class="soll">${r.an ? `Ziel <b>${sollGrad(r.soll)}</b>` : "Thermostat aus"}`
+      + `${heizungAktuell(r) ? "" : ` · ${uhrzeitVon(r.stand)}`}</div></div>`).join("")
+    + `</div></div>`;
+}
+
+function oeffneZuhause() {
+  fuelleZuhause();
+  $("zuhause").classList.add("offen");
+  clearTimeout(zuhauseZu);
+  zuhauseZu = setTimeout(schliesseZuhause, 60000);
+}
+
+function schliesseZuhause() {
+  clearTimeout(zuhauseZu);
+  $("zuhause").classList.remove("offen");
+}
+
 let letzteStunde = "";
 function tick() {
   const j = jetzt(), zeit = j.slice(11);
   if (zeit === K.neuLadenUm && performance.now() > 60000) location.reload();
   if (Number(zeit.slice(3)) % 5 === 0) pruefeDaten();
+  if (K.kacheln.heizung) pruefeHeizung();
   $("uhr").innerHTML = zeit.replace(":", "<span>:</span>");
   zeigeZeiger(zeit);
   sicher(zeigeBus);
@@ -753,6 +832,8 @@ function tick() {
 
 $("termine").addEventListener("click", () => sicher(oeffneKalender));
 $("kalender").addEventListener("click", schliesseKalender);
+$("heizung").addEventListener("click", () => sicher(oeffneZuhause));
+$("zuhause").addEventListener("click", schliesseZuhause);
 $("sport").addEventListener("click", schliesseSport);
 setInterval(pruefeSport, 3000);
 zeichneZifferblatt();

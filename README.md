@@ -24,6 +24,38 @@ TANK_RADIUS=5
 
 Die Spritsorte (`sprit: "e10"`, `"e5"` oder `"diesel"`) steht in der Konfiguration oben in `dashboard.html`.
 
+### Heizung (HAMA-Thermostate)
+
+Unter der Uhr stehen je Raum Ist- und Soll-Temperatur (orange), Antippen öffnet die Seite „Zuhause“ mit allen Räumen.
+`dashboard-heizung.py` fragt die Thermostate alle 5 Minuten direkt über die HAMA-Zentrale im WLAN ab, ohne Cloud.
+Werte älter als 20 Minuten erscheinen blass. Wie viele Räume unter der Uhr stehen: `heizungAnzahl` in `dashboard.html`.
+
+**Einmalig am PC:** Zentrale und Thermostate in der App *Smart Life* einrichten, auf platform.tuya.com ein
+Cloud-Projekt (Central Europe) anlegen und das Smart-Life-Konto per QR-Code verknüpfen, dann:
+
+```sh
+pip install --user tinytuya
+python -m tinytuya wizard     # Access ID, Access Secret, ID der Zentrale, Region eu
+```
+
+Die erzeugte `devices.json` enthält die Schlüssel. Sie kommt nur aufs Tablet, nicht ins Repo:
+
+```sh
+scp devices.json BENUTZER@TABLET-IP:dashboard-tuya.json
+```
+
+**Auf dem Tablet:**
+
+```sh
+sudo apt install python3-pip python3-cryptography python3-requests python3-colorama
+pip3 install --user --no-deps --break-system-packages tinytuya   # ältere pip: ohne --break-system-packages
+python3 ~/dashboard-heizung.py                                   # Test, zeigt je Raum Ist → Soll
+```
+
+Der Zentrale im Router eine feste IP geben. Ändert sie sich doch, die IP in `~/dashboard-tuya.json` anpassen.
+Wird die Zentrale neu gekoppelt, ändert sich ihr Schlüssel: Wizard erneut ausführen und die Datei neu kopieren.
+Neue Thermostate oder umbenannte Räume brauchen ebenfalls eine neue `devices.json`.
+
 ### Sprachbefehle mit Siri
 
 Das iPhone schickt über die Kurzbefehle-App einen Befehl per SSH ans Tablet, `dashboard-befehl.py`
@@ -86,4 +118,5 @@ Die bisherigen Daten bleiben dabei erhalten, die offene Seite lädt sich danach 
   Damit auch der Sprachbefehl neu starten darf, legt `setup.sh` `/etc/sudoers.d/dashboard` an (nur `shutdown -r now`).
 - **Jede Minute** (`dashboard-wache.sh`): Firefox nach einem Absturz neu starten, Bildschirm von 0 bis 6 Uhr
   nach 2 Minuten ohne Berührung abschalten. Pausieren für Wartung: `touch ~/dashboard-pause`, danach wieder löschen.
+- **Alle 5 Minuten** (`dashboard-heizung.py`): Thermostate abfragen, falls `~/dashboard-tuya.json` existiert.
 - Schlägt ein Abruf länger als einen Tag fehl, steht unten links „Daten veraltet“.

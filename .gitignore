@@ -3,3 +3,10 @@ dashboard-stand.js
 *.neu
 __pycache__/
 dashboard-sport.js
+dashboard-heizung.js
+# Schlüssel und Ausgaben des tinytuya-Wizards
+dashboard-tuya.json
+devices.json
+tinytuya.json
+tuya-raw.json
+snapshot.json

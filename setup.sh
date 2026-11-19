@@ -13,6 +13,9 @@ SEITE=$HOME/dashboard.html
 UPDATE=$HOME/dashboard-update.py
 WACHE=$HOME/dashboard-wache.sh
 BEFEHL=$HOME/dashboard-befehl.py
+HEIZUNG=$HOME/dashboard-heizung.py
+# Schlüssel der HAMA-Zentrale: die devices.json aus "python3 -m tinytuya wizard" (siehe README)
+TUYA=$HOME/dashboard-tuya.json
 PRIVAT=$HOME/dashboard-privat.conf
 STARTUP=$HOME/.desktop-session/startup
 PROFIL=$HOME/.dashboard-firefox
@@ -36,7 +39,7 @@ entferne_autostart() {
 
 # Filtert auch den Eintrag der früheren Version heraus
 ohne_dashboard_jobs() {
-	crontab -l 2>/dev/null | grep -v -E 'muell-update\.sh|dashboard-update\.py|dashboard-wache\.sh' || true
+	crontab -l 2>/dev/null | grep -v -E 'muell-update\.sh|dashboard-update\.py|dashboard-wache\.sh|dashboard-heizung\.py' || true
 }
 
 entferne_cron() {
@@ -69,7 +72,7 @@ fi
 # Aus einem Repo-Ordner die Dateien nach $HOME holen, die Daten der alten Seite merken
 DATEN_AUS=""
 if [ "$QUELLE" != "$HOME" ]; then
-	for datei in dashboard.html dashboard-update.py dashboard-wache.sh dashboard-befehl.py; do
+	for datei in dashboard.html dashboard-update.py dashboard-wache.sh dashboard-befehl.py dashboard-heizung.py; do
 		[ -f "$QUELLE/$datei" ] || { echo "Nicht gefunden: $QUELLE/$datei" >&2; exit 1; }
 	done
 	if [ -f "$SEITE" ]; then
@@ -80,10 +83,11 @@ if [ "$QUELLE" != "$HOME" ]; then
 	cp "$QUELLE/dashboard-update.py" "$UPDATE"
 	cp "$QUELLE/dashboard-wache.sh" "$WACHE"
 	cp "$QUELLE/dashboard-befehl.py" "$BEFEHL"
+	cp "$QUELLE/dashboard-heizung.py" "$HEIZUNG"
 	echo "Dateien aus $QUELLE übernommen."
 fi
 
-for datei in "$SEITE" "$UPDATE" "$WACHE" "$BEFEHL"; do
+for datei in "$SEITE" "$UPDATE" "$WACHE" "$BEFEHL" "$HEIZUNG"; do
 	[ -f "$datei" ] || { echo "Nicht gefunden: $datei" >&2; exit 1; }
 done
 
@@ -114,12 +118,14 @@ echo "Autostart eingetragen: $STARTUP"
 # bei einem Fehlschlag stündlich erneut. Dazu einmal kurz nach dem Hochfahren.
 # Die offene Seite merkt neue Daten an dashboard-stand.js und lädt sich dann selbst neu.
 # Jede Minute prüft dashboard-wache.sh Firefox und die nächtliche Bildschirmabschaltung.
+# Alle 5 Minuten fragt dashboard-heizung.py die Thermostate ab (ohne dashboard-tuya.json tut es nichts).
 if command -v crontab >/dev/null 2>&1; then
 	{
 		ohne_dashboard_jobs
 		echo "@reboot sleep 60 && python3 \"$UPDATE\" --nachholen >/dev/null 2>&1"
 		echo "47 * * * * python3 \"$UPDATE\" --nachholen >/dev/null 2>&1"
 		echo "* * * * * sh \"$WACHE\" >/dev/null 2>&1"
+		echo "*/5 * * * * python3 \"$HEIZUNG\" >/dev/null 2>&1"
 	} | crontab -
 	echo "Cron-Jobs eingetragen."
 else
@@ -150,6 +156,15 @@ else
 	rm -f "$regel"
 fi
 [ -x /usr/sbin/sshd ] || echo "HINWEIS: Für die Siri-Befehle fehlt der SSH-Server: sudo apt install openssh-server"
+
+# Heizung: optional, braucht dashboard-tuya.json und tinytuya
+if [ ! -f "$TUYA" ]; then
+	echo "HINWEIS: Heizung nicht eingerichtet ($TUYA fehlt, siehe README)."
+elif ! python3 -c 'import tinytuya' 2>/dev/null; then
+	echo "HINWEIS: Für die Heizung fehlt tinytuya, siehe README (Abschnitt Heizung)." >&2
+else
+	python3 "$HEIZUNG" || echo "WARNUNG: Nicht alle Thermostate haben geantwortet." >&2
+fi
 
 rm -f "$HOME/muell-update.sh"
 python3 "$UPDATE" "$SEITE" $DATEN_AUS || echo "WARNUNG: Nicht alle Daten konnten geladen werden." >&2
