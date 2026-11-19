@@ -28,6 +28,16 @@ neustart_job() {
 	echo "# Von setup.sh des Dashboards angelegt. Entfernen: sh setup.sh --entfernen"
 	echo "$NEUSTART_ZEIT * * * root [ -e \"$HOME/dashboard-pause\" ] || /sbin/shutdown -r now"
 }
+# Selbstreparatur des WLANs: Bekommt connman beim Start nicht schnell genug eine Adresse, legt es
+# Notfall-Routen ohne Router an ("default dev wlan0 scope link"). Die liegen vor der richtigen Route
+# und sperren das Internet per IPv4 (Müll, Spritpreise, Wetter: "No route to host"). Nur wenn die
+# richtige Route (default via …) da ist, löscht dieser Job die Notfall-Routen jede Minute wieder.
+NETZ=/etc/cron.d/dashboard-netz
+netz_job() {
+	echo "# Von setup.sh des Dashboards angelegt. Entfernen: sh setup.sh --entfernen"
+	echo "PATH=/usr/sbin:/usr/bin:/sbin:/bin"
+	echo "* * * * * root ip -4 route show default | grep -q ' via ' && ip -4 route show | grep -E '^(default|0\\.0\\.0\\.0) dev [^ ]+ scope link' | while read -r ziel _ name _; do ip route del \"\$ziel\" dev \"\$name\" scope link; done"
+}
 # Erlaubt dem Sprachbefehl "Neustart" (dashboard-befehl.py) genau diesen einen Befehl ohne Passwort
 SUDOERS=/etc/sudoers.d/dashboard
 
@@ -52,10 +62,10 @@ if [ "${1:-}" = "--entfernen" ]; then
 	entferne_autostart
 	entferne_cron
 	rm -rf "$PROFIL"
-	if [ -f "$NEUSTART" ] || [ -f "$SUDOERS" ]; then
-		sudo rm -f "$NEUSTART" "$SUDOERS" || echo "WARNUNG: $NEUSTART und $SUDOERS bitte selbst mit sudo löschen." >&2
+	if [ -f "$NEUSTART" ] || [ -f "$SUDOERS" ] || [ -f "$NETZ" ]; then
+		sudo rm -f "$NEUSTART" "$SUDOERS" "$NETZ" || echo "WARNUNG: $NEUSTART, $SUDOERS und $NETZ bitte selbst mit sudo löschen." >&2
 	fi
-	echo "Autostart, Cron-Jobs, geplanter Neustart und Firefox-Profil entfernt."
+	echo "Autostart, Cron-Jobs, geplanter Neustart, WLAN-Reparatur und Firefox-Profil entfernt."
 	exit 0
 fi
 
@@ -139,6 +149,14 @@ elif neustart_job | sudo tee "$NEUSTART" >/dev/null && sudo chmod 644 "$NEUSTART
 	echo "Geplanter Neustart eingetragen: $NEUSTART (11:30 und 23:30)."
 else
 	echo "WARNUNG: Geplanter Neustart konnte nicht eingetragen werden (sudo nötig)." >&2
+fi
+
+if netz_job | cmp -s - "$NETZ" 2>/dev/null; then
+	echo "WLAN-Reparatur ist eingerichtet."
+elif netz_job | sudo tee "$NETZ" >/dev/null && sudo chmod 644 "$NETZ"; then
+	echo "WLAN-Reparatur eingetragen: $NETZ"
+else
+	echo "WARNUNG: WLAN-Reparatur konnte nicht eingetragen werden (sudo nötig)." >&2
 fi
 
 # Sprachbefehle per Siri: Neustart ohne Passwort erlauben (die Regel wird vor dem Eintragen geprüft)

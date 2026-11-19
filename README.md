@@ -118,5 +118,8 @@ Die bisherigen Daten bleiben dabei erhalten, die offene Seite lädt sich danach 
   Damit auch der Sprachbefehl neu starten darf, legt `setup.sh` `/etc/sudoers.d/dashboard` an (nur `shutdown -r now`).
 - **Jede Minute** (`dashboard-wache.sh`): Firefox nach einem Absturz neu starten, Bildschirm von 0 bis 6 Uhr
   nach 2 Minuten ohne Berührung abschalten. Pausieren für Wartung: `touch ~/dashboard-pause`, danach wieder löschen.
+- **Jede Minute** (`/etc/cron.d/dashboard-netz`): Notfall-Routen löschen, die connman bei langsamem DHCP anlegt
+  (`default dev wlan0 scope link`, Adresse `169.254.…`). Sie blockieren sonst das Internet per IPv4
+  („No route to host“ bei Müll und Spritpreisen). Gelöscht wird nur, wenn die richtige Route `default via …` da ist.
 - **Alle 5 Minuten** (`dashboard-heizung.py`): Thermostate abfragen, falls `~/dashboard-tuya.json` existiert.
 - Schlägt ein Abruf länger als einen Tag fehl, steht unten links „Daten veraltet“.
